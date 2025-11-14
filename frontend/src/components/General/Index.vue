@@ -5,6 +5,8 @@ import ListItem from '../Setting/ListRow.vue'
 import LanguageSwitcher from '../Setting/LanguageSwitcher.vue'
 import ThemeSetting from '../Setting/ThemeSetting.vue'
 import { fetchAppSettings, saveAppSettings, type AppSettings } from '../../services/appSettings'
+import { checkUpdate, downloadUpdate, restartApp, getUpdateState, setAutoCheckEnabled, type UpdateState } from '../../services/update'
+import { fetchCurrentVersion } from '../../services/version'
 
 const router = useRouter()
 // 从 localStorage 读取缓存值作为初始值，避免加载时的视觉闪烁
@@ -15,8 +17,15 @@ const getCachedValue = (key: string, defaultValue: boolean): boolean => {
 const heatmapEnabled = ref(getCachedValue('heatmap', true))
 const homeTitleVisible = ref(getCachedValue('homeTitle', true))
 const autoStartEnabled = ref(getCachedValue('autoStart', false))
+const autoUpdateEnabled = ref(getCachedValue('autoUpdate', true))
 const settingsLoading = ref(true)
 const saveBusy = ref(false)
+
+// 更新相关状态
+const updateState = ref<UpdateState | null>(null)
+const checking = ref(false)
+const downloading = ref(false)
+const appVersion = ref('')
 
 const goBack = () => {
   router.push('/')
@@ -29,16 +38,19 @@ const loadAppSettings = async () => {
     heatmapEnabled.value = data?.show_heatmap ?? true
     homeTitleVisible.value = data?.show_home_title ?? true
     autoStartEnabled.value = data?.auto_start ?? false
+    autoUpdateEnabled.value = data?.auto_update ?? true
 
     // 缓存到 localStorage，下次打开时直接显示正确状态
     localStorage.setItem('app-settings-heatmap', String(heatmapEnabled.value))
     localStorage.setItem('app-settings-homeTitle', String(homeTitleVisible.value))
     localStorage.setItem('app-settings-autoStart', String(autoStartEnabled.value))
+    localStorage.setItem('app-settings-autoUpdate', String(autoUpdateEnabled.value))
   } catch (error) {
     console.error('failed to load app settings', error)
     heatmapEnabled.value = true
     homeTitleVisible.value = true
     autoStartEnabled.value = false
+    autoUpdateEnabled.value = true
   } finally {
     settingsLoading.value = false
   }
@@ -52,13 +64,18 @@ const persistAppSettings = async () => {
       show_heatmap: heatmapEnabled.value,
       show_home_title: homeTitleVisible.value,
       auto_start: autoStartEnabled.value,
+      auto_update: autoUpdateEnabled.value,
     }
     await saveAppSettings(payload)
+
+    // 同步自动更新设置到 UpdateService
+    await setAutoCheckEnabled(autoUpdateEnabled.value)
 
     // 更新缓存
     localStorage.setItem('app-settings-heatmap', String(heatmapEnabled.value))
     localStorage.setItem('app-settings-homeTitle', String(homeTitleVisible.value))
     localStorage.setItem('app-settings-autoStart', String(autoStartEnabled.value))
+    localStorage.setItem('app-settings-autoUpdate', String(autoUpdateEnabled.value))
 
     window.dispatchEvent(new CustomEvent('app-settings-updated'))
   } catch (error) {
@@ -68,8 +85,80 @@ const persistAppSettings = async () => {
   }
 }
 
-onMounted(() => {
-  void loadAppSettings()
+const loadUpdateState = async () => {
+  try {
+    updateState.value = await getUpdateState()
+  } catch (error) {
+    console.error('failed to load update state', error)
+  }
+}
+
+const checkUpdateManually = async () => {
+  checking.value = true
+  try {
+    const info = await checkUpdate()
+    await loadUpdateState()
+
+    if (!info.available) {
+      alert('已是最新版本')
+    }
+  } catch (error) {
+    console.error('check update failed', error)
+    alert('检查更新失败，请检查网络连接')
+  } finally {
+    checking.value = false
+  }
+}
+
+const downloadAndInstall = async () => {
+  downloading.value = true
+  try {
+    await downloadUpdate()
+    await loadUpdateState()
+
+    // 弹窗确认重启
+    const confirmed = confirm('新版本已下载完成，是否立即重启应用？')
+    if (confirmed) {
+      await restartApp()
+    }
+  } catch (error) {
+    console.error('download failed', error)
+    alert('下载失败，请稍后重试')
+  } finally {
+    downloading.value = false
+  }
+}
+
+const formatLastCheckTime = (timeStr?: string) => {
+  if (!timeStr) return '从未检查'
+
+  const checkTime = new Date(timeStr)
+  const now = new Date()
+  const diffMs = now.getTime() - checkTime.getTime()
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+
+  if (diffHours < 1) {
+    return '刚刚'
+  } else if (diffHours < 24) {
+    return `${diffHours} 小时前`
+  } else {
+    const diffDays = Math.floor(diffHours / 24)
+    return `${diffDays} 天前`
+  }
+}
+
+onMounted(async () => {
+  await loadAppSettings()
+
+  // 加载当前版本号
+  try {
+    appVersion.value = await fetchCurrentVersion()
+  } catch (error) {
+    console.error('failed to load app version', error)
+  }
+
+  // 加载更新状态
+  await loadUpdateState()
 })
 </script>
 
@@ -139,6 +228,63 @@ onMounted(() => {
           </ListItem>
           <ListItem :label="$t('components.general.label.theme')">
             <ThemeSetting />
+          </ListItem>
+        </div>
+      </section>
+
+      <section>
+        <h2 class="mac-section-title">{{ $t('components.general.title.update') }}</h2>
+        <div class="mac-panel">
+          <ListItem :label="$t('components.general.label.autoUpdate')">
+            <label class="mac-switch">
+              <input
+                type="checkbox"
+                :disabled="settingsLoading || saveBusy"
+                v-model="autoUpdateEnabled"
+                @change="persistAppSettings"
+              />
+              <span></span>
+            </label>
+          </ListItem>
+
+          <ListItem :label="$t('components.general.label.lastCheck')">
+            <span class="info-text">{{ formatLastCheckTime(updateState?.last_check_time) }}</span>
+            <span v-if="updateState && updateState.consecutive_failures > 0" class="warning-badge">
+              ⚠️ {{ $t('components.general.update.checkFailed', { count: updateState.consecutive_failures }) }}
+            </span>
+          </ListItem>
+
+          <ListItem :label="$t('components.general.label.currentVersion')">
+            <span class="version-text">{{ appVersion }}</span>
+          </ListItem>
+
+          <ListItem
+            v-if="updateState?.latest_known_version && updateState.latest_known_version !== appVersion"
+            :label="$t('components.general.label.latestVersion')">
+            <span class="version-text highlight">{{ updateState.latest_known_version }} 🆕</span>
+          </ListItem>
+
+          <ListItem :label="$t('components.general.label.checkNow')">
+            <button
+              @click="checkUpdateManually"
+              :disabled="checking"
+              class="action-btn">
+              {{ checking ? $t('components.general.update.checking') : $t('components.general.update.checkNow') }}
+            </button>
+          </ListItem>
+
+          <ListItem
+            v-if="updateState?.update_ready"
+            :label="$t('components.general.label.manualUpdate')">
+            <button
+              @click="downloadAndInstall"
+              :disabled="downloading"
+              class="primary-btn">
+              {{ downloading
+                 ? $t('components.general.update.downloading', { progress: Math.round(updateState.download_progress) })
+                 : $t('components.general.update.downloadAndInstall')
+              }}
+            </button>
           </ListItem>
         </div>
       </section>

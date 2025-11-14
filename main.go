@@ -73,12 +73,30 @@ func main() {
 	codexSettings := services.NewCodexSettingsService(providerRelay.Addr())
 	logService := services.NewLogService()
 	autoStartService := services.NewAutoStartService()
+	updateService := services.NewUpdateService(AppVersion)
 	appSettings := services.NewAppSettingsService(autoStartService)
 	mcpService := services.NewMCPService()
 	skillService := services.NewSkillService()
 	importService := services.NewImportService(providerService, mcpService)
 	dockService := dock.New()
 	versionService := NewVersionService()
+
+	// 应用待处理的更新
+	go func() {
+		time.Sleep(2 * time.Second)
+		if err := updateService.ApplyUpdate(); err != nil {
+			log.Printf("应用更新失败: %v", err)
+		}
+	}()
+
+	// 启动定时检查（如果启用）
+	if updateService.IsAutoCheckEnabled() {
+		go func() {
+			time.Sleep(10 * time.Second) // 延迟10秒避免影响启动
+			updateService.CheckUpdateAsync()
+			updateService.StartDailyCheck()
+		}()
+	}
 
 	go func() {
 		if err := providerRelay.Start(); err != nil {
@@ -103,6 +121,7 @@ func main() {
 			application.NewService(codexSettings),
 			application.NewService(logService),
 			application.NewService(appSettings),
+			application.NewService(updateService),
 			application.NewService(mcpService),
 			application.NewService(skillService),
 			application.NewService(importService),

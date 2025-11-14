@@ -16,6 +16,7 @@ type AppSettings struct {
 	ShowHeatmap   bool `json:"show_heatmap"`
 	ShowHomeTitle bool `json:"show_home_title"`
 	AutoStart     bool `json:"auto_start"`
+	AutoUpdate    bool `json:"auto_update"`
 }
 
 type AppSettingsService struct {
@@ -49,6 +50,7 @@ func (as *AppSettingsService) defaultSettings() AppSettings {
 		ShowHeatmap:   true,
 		ShowHomeTitle: true,
 		AutoStart:     autoStartEnabled,
+		AutoUpdate:    true, // 默认开启自动更新
 	}
 }
 

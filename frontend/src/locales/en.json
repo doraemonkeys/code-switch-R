@@ -77,6 +77,7 @@
       "controls": {
         "github": "Open project GitHub",
         "githubUpdate": "Open GitHub (update available)",
+        "updateReady": "Update ready, click to restart",
         "theme": "Toggle theme",
         "settings": "Open settings",
         "mcp": "Open MCP panel",
@@ -221,7 +222,13 @@
         "theme": "Theme mode",
         "heatmap": "Show dashboard heatmap",
         "homeTitle": "Show home title",
-        "autoStart": "Launch at login"
+        "autoStart": "Launch at login",
+        "autoUpdate": "Automatic update",
+        "lastCheck": "Last check",
+        "currentVersion": "Current version",
+        "latestVersion": "Latest version",
+        "checkNow": "Check now",
+        "manualUpdate": "Manual update"
       },
       "subLabel": {
         "sb_assistant_access": "Accessibility permission is required to operate clipboard contents",
@@ -231,6 +238,13 @@
         "authorized": "Auth",
         "go_authorized": "Auth now",
         "back": "Back to home"
+      },
+      "update": {
+        "checkFailed": "Check failed {count} times in a row",
+        "checking": "Checking...",
+        "checkNow": "Check now",
+        "downloading": "Downloading {progress}%",
+        "downloadAndInstall": "Download and install"
       }
     },
     "mcp": {

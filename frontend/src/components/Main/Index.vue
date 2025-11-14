@@ -4,9 +4,12 @@
       <p class="global-eyebrow">{{ t('components.main.hero.eyebrow') }}</p>
       <button
         class="ghost-icon github-icon"
-        :class="{ 'github-upgrade': hasUpdateAvailable }"
-        :data-tooltip="hasUpdateAvailable ? t('components.main.controls.githubUpdate') : t('components.main.controls.github')"
-        @click="openGitHub"
+        :class="{
+          'github-upgrade': hasUpdateAvailable && !updateReady,
+          'update-ready': updateReady
+        }"
+        :data-tooltip="getGithubTooltip()"
+        @click="handleGithubClick"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path
@@ -18,6 +21,12 @@
             stroke-linejoin="round"
           />
         </svg>
+        <!-- 更新徽章 -->
+        <span v-if="updateReady" class="update-badge pulse">Ready</span>
+        <span v-else-if="downloadProgress > 0 && downloadProgress < 100" class="update-badge downloading">
+          {{ Math.round(downloadProgress) }}%
+        </span>
+        <span v-else-if="hasUpdateAvailable" class="update-badge">New</span>
       </button>
       <button
         class="ghost-icon"
@@ -553,6 +562,7 @@ import { fetchProxyStatus, enableProxy, disableProxy } from '../../services/clau
 import { fetchHeatmapStats, fetchProviderDailyStats, type ProviderDailyStat } from '../../services/logs'
 import { fetchCurrentVersion } from '../../services/version'
 import { fetchAppSettings, type AppSettings } from '../../services/appSettings'
+import { getUpdateState, restartApp, type UpdateState } from '../../services/update'
 import { getCurrentTheme, setTheme, type ThemeMode } from '../../utils/ThemeManager'
 import { useRouter } from 'vue-router'
 import { fetchConfigImportStatus, importFromCcSwitch, type ConfigImportStatus } from '../../services/configImport'
@@ -603,6 +613,8 @@ const showHomeTitle = ref(true)
 const mcpIcon = lobeIcons['mcp'] ?? ''
 const appVersion = ref('')
 const hasUpdateAvailable = ref(false)
+const updateReady = ref(false)
+const downloadProgress = ref(0)
 const importStatus = ref<ConfigImportStatus | null>(null)
 const importBusy = ref(false)
 
@@ -815,6 +827,21 @@ const checkForUpdates = async () => {
   }
 }
 
+// 轮询更新状态
+const pollUpdateState = async () => {
+  try {
+    const state = await getUpdateState()
+    updateReady.value = state.update_ready
+    downloadProgress.value = state.download_progress
+    // 更新 hasUpdateAvailable（如果有新版本且不同于当前版本）
+    if (state.latest_known_version && state.latest_known_version !== appVersion.value) {
+      hasUpdateAvailable.value = true
+    }
+  } catch (error) {
+    console.error('failed to poll update state', error)
+  }
+}
+
 const handleAppSettingsUpdated = () => {
   void loadAppSettings()
 }
@@ -823,7 +850,8 @@ const startUpdateTimer = () => {
   stopUpdateTimer()
   updateTimer = window.setInterval(() => {
     void checkForUpdates()
-  }, 60 * 60 * 1000)
+    void pollUpdateState()
+  }, 30 * 1000) // 每30秒检查一次更新状态
 }
 
 const stopUpdateTimer = () => {
@@ -1067,6 +1095,7 @@ onMounted(async () => {
   await Promise.all(providerTabIds.map((tab) => loadProviderStats(tab)))
   await loadAppSettings()
   await checkForUpdates()
+  await pollUpdateState() // 首次加载更新状态
   await refreshImportStatus()
   startProviderStatsTimer()
   startUpdateTimer()
@@ -1112,10 +1141,35 @@ const toggleTheme = () => {
   setTheme(next)
 }
 
-const openGitHub = () => {
-  Browser.OpenURL(releasePageUrl).catch(() => {
-    console.error('failed to open github')
-  })
+const handleGithubClick = async () => {
+  if (updateReady.value) {
+    // 更新已准备好，提示重启
+    const confirmed = confirm(`新版本已准备好，是否立即重启应用？`)
+    if (confirmed) {
+      try {
+        await restartApp()
+      } catch (error) {
+        console.error('failed to restart app', error)
+        alert('重启失败，请手动重启应用')
+      }
+    }
+  } else {
+    // 打开 GitHub
+    Browser.OpenURL(releasePageUrl).catch(() => {
+      console.error('failed to open github')
+    })
+  }
+}
+
+// 获取 GitHub 图标的 tooltip
+const getGithubTooltip = () => {
+  if (updateReady.value) {
+    return t('components.main.controls.updateReady')
+  } else if (hasUpdateAvailable.value) {
+    return t('components.main.controls.githubUpdate')
+  } else {
+    return t('components.main.controls.github')
+  }
 }
 
 type VendorForm = {
