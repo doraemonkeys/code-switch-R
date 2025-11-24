@@ -1586,6 +1586,10 @@ const requestRemove = (card: AutomationCard) => {
 const handleDuplicate = async (card: AutomationCard) => {
   try {
     const newProvider = await DuplicateProvider(activeTab.value, card.id)
+    if (!newProvider) {
+      console.warn('[Duplicate] DuplicateProvider 返回空结果，已跳过刷新')
+      return
+    }
     // 刷新列表以显示新副本
     await loadProvidersFromDisk()
     console.log(`[Duplicate] Provider "${card.name}" duplicated as "${newProvider.name}"`)

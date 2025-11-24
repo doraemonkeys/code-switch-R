@@ -263,11 +263,8 @@ import {
   DeleteProvider,
   SwitchProvider,
   CreateProviderFromPreset,
-  type GeminiProvider,
-  type GeminiPreset,
-  type GeminiStatus,
-  type GeminiAuthType,
 } from '../../../bindings/codeswitch/services/geminiservice'
+import type { GeminiProvider, GeminiPreset, GeminiStatus, GeminiAuthType } from '../../types/gemini'
 
 const { t } = useI18n()
 const router = useRouter()
