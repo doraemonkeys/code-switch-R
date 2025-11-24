@@ -264,22 +264,24 @@ import {
   SwitchProvider,
   CreateProviderFromPreset,
 } from '../../../bindings/codeswitch/services/geminiservice'
-import type { GeminiProvider, GeminiPreset, GeminiStatus, GeminiAuthType } from '../../types/gemini'
 
 const { t } = useI18n()
 const router = useRouter()
 
 const geminiIcon = lobeIcons['gemini'] ?? ''
 
-type GeminiAuth = GeminiAuthType
+type BindingGeminiStatus = Awaited<ReturnType<typeof GetStatus>>
+type BindingGeminiProvider = Awaited<ReturnType<typeof GetProviders>> extends (infer P)[] ? P : any
+type BindingGeminiPreset = Awaited<ReturnType<typeof GetPresets>> extends (infer P)[] ? P : any
+type GeminiAuth = BindingGeminiStatus extends { authType: infer A } ? A : string
 
 const loading = ref(false)
 const saving = ref(false)
 const switching = ref(false)
 
-const presets = ref<GeminiPreset[]>([])
-const providers = ref<GeminiProvider[]>([])
-const status = ref<GeminiStatus | null>(null)
+const presets = ref<BindingGeminiPreset[]>([])
+const providers = ref<BindingGeminiProvider[]>([])
+const status = ref<BindingGeminiStatus | null>(null)
 
 const modalState = reactive({
   open: false,
@@ -354,7 +356,7 @@ const getPresetIcon = (preset: GeminiPreset) => {
   return geminiIcon
 }
 
-const openPresetModal = (preset: GeminiPreset) => {
+const openPresetModal = (preset: BindingGeminiPreset) => {
   modalState.open = true
   modalState.editing = false
   modalState.presetMode = true
@@ -375,7 +377,7 @@ const openCreateModal = () => {
   modalState.form.model = 'gemini-2.5-pro-preview'
 }
 
-const openEditModal = (provider: GeminiProvider) => {
+const openEditModal = (provider: BindingGeminiProvider) => {
   modalState.open = true
   modalState.editing = true
   modalState.editingId = provider.id
@@ -451,7 +453,7 @@ const switchToProvider = async (id: string) => {
   }
 }
 
-const requestDelete = (provider: GeminiProvider) => {
+const requestDelete = (provider: BindingGeminiProvider) => {
   confirmState.provider = provider
   confirmState.open = true
 }
