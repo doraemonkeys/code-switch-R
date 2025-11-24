@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // DeepLinkImportRequest 深度链接导入请求模型
@@ -180,12 +182,12 @@ func (s *DeepLinkService) ImportProviderFromDeepLink(request *DeepLinkImportRequ
 	}
 
 	// 4. 添加到对应的平台
-	var addErr error
+	var kind string
 	switch merged.App {
 	case "claude":
-		addErr = s.providerService.AddProvider(provider, "claude")
+		kind = "claude"
 	case "codex":
-		addErr = s.providerService.AddProvider(provider, "codex")
+		kind = "codex"
 	case "gemini":
 		// Gemini 暂不支持通过 ProviderService 添加，返回友好提示
 		return "", fmt.Errorf("Gemini 供应商导入暂不支持，请使用 Gemini 页面手动添加")
@@ -193,51 +195,43 @@ func (s *DeepLinkService) ImportProviderFromDeepLink(request *DeepLinkImportRequ
 		return "", fmt.Errorf("不支持的 app 类型: %s", merged.App)
 	}
 
-	if addErr != nil {
-		return "", addErr
+	// 加载现有供应商列表
+	providers, err := s.providerService.LoadProviders(kind)
+	if err != nil {
+		return "", fmt.Errorf("加载供应商列表失败: %w", err)
 	}
 
-	return provider.ID, nil
+	// 添加新供应商到列表
+	providers = append(providers, *provider)
+
+	// 保存更新后的列表
+	if err := s.providerService.SaveProviders(kind, providers); err != nil {
+		return "", fmt.Errorf("保存供应商失败: %w", err)
+	}
+
+	return strconv.FormatInt(provider.ID, 10), nil
 }
 
 // buildProviderFromRequest 从深度链接请求构建 Provider
 func (s *DeepLinkService) buildProviderFromRequest(request *DeepLinkImportRequest) (*Provider, error) {
+	// 生成唯一 ID（使用时间戳）
+	id := time.Now().UnixNano()
+
 	provider := &Provider{
-		Name:         request.Name,
-		APIURL:       request.Endpoint,
-		APIKey:       request.APIKey,
-		OfficialSite: request.Homepage,
-		Enabled:      false, // 默认禁用，用户需手动启用
+		ID:      id,
+		Name:    request.Name,
+		APIURL:  request.Endpoint,
+		APIKey:  request.APIKey,
+		Site:    request.Homepage,
+		Enabled: false, // 默认禁用，用户需手动启用
+		Level:   1,     // 默认最高优先级
 	}
 
-	// 设置模型（基于 app 类型）
-	switch request.App {
-	case "claude":
-		// Claude: 使用细粒度模型配置
-		if request.SonnetModel != nil && *request.SonnetModel != "" {
-			provider.Model = *request.SonnetModel
-		} else if request.Model != nil && *request.Model != "" {
-			provider.Model = *request.Model
+	// 如果提供了模型信息，可以设置到 SupportedModels
+	if request.Model != nil && *request.Model != "" {
+		provider.SupportedModels = map[string]bool{
+			*request.Model: true,
 		}
-
-		// 设置其他模型级别
-		if request.HaikuModel != nil {
-			provider.HaikuModel = *request.HaikuModel
-		}
-		if request.OpusModel != nil {
-			provider.OpusModel = *request.OpusModel
-		}
-
-	case "codex":
-		// Codex: 使用单一模型字段
-		if request.Model != nil && *request.Model != "" {
-			provider.Model = *request.Model
-		}
-	}
-
-	// 设置备注
-	if request.Notes != nil {
-		provider.Notes = *request.Notes
 	}
 
 	return provider, nil
