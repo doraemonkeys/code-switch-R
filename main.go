@@ -70,7 +70,7 @@ func main() {
 	// 【更新恢复】Windows 平台：检查并从失败的更新中恢复
 	checkAndRecoverFromFailedUpdate()
 
-	// 【残留清理】Windows 平台：清理更新过程中的临时文件
+	// 【残留清理】全平台：清理更新过程中的临时文件（Windows/Linux/macOS）
 	cleanupOldFiles()
 
 	// 【修复】第一步：初始化数据库（必须最先执行）
@@ -346,7 +346,7 @@ func handleDockVisibility(service *dock.DockService, show bool) {
 }
 
 // ============================================================
-// Windows 静默更新：启动恢复和清理功能
+// 更新系统：启动恢复（Windows）和全平台清理功能
 // ============================================================
 
 // checkAndRecoverFromFailedUpdate 检查并从失败的更新中恢复
@@ -397,12 +397,8 @@ func checkAndRecoverFromFailedUpdate() {
 }
 
 // cleanupOldFiles 清理更新过程中的残留文件
-// 在主程序启动时调用
+// 在主程序启动时调用 - 支持所有平台
 func cleanupOldFiles() {
-	if runtime.GOOS != "windows" {
-		return
-	}
-
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return
@@ -415,16 +411,21 @@ func cleanupOldFiles() {
 
 	log.Printf("[Cleanup] 开始清理更新目录: %s", updateDir)
 
-	// 1. 清理超过 7 天的 .old 备份文件
+	// 1. 清理超过 7 天的 .old 备份文件（所有平台通用）
 	cleanupByAge(updateDir, ".old", 7*24*time.Hour)
 
-	// 2. 清理旧版本下载文件（保留最新 1 个）
-	cleanupByCount(updateDir, "CodeSwitch*.exe", 1)
+	// 2. 按平台清理旧版本下载文件
+	switch runtime.GOOS {
+	case "windows":
+		cleanupByCount(updateDir, "CodeSwitch*.exe", 1)
+		cleanupByCount(updateDir, "updater*.exe", 1)
+	case "linux":
+		cleanupByCount(updateDir, "CodeSwitch*.AppImage", 1)
+	case "darwin":
+		cleanupByCount(updateDir, "codeswitch-macos-*.zip", 1)
+	}
 
-	// 3. 清理旧 updater（保留最新 1 个）
-	cleanupByCount(updateDir, "updater*.exe", 1)
-
-	// 4. 清理旧日志（保留最近 5 个，或总大小 < 5MB）
+	// 3. 清理旧日志（保留最近 5 个，或总大小 < 5MB）- 所有平台通用
 	cleanupLogs(updateDir, 5, 5*1024*1024)
 
 	log.Println("[Cleanup] 清理完成")

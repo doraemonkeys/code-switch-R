@@ -10,18 +10,66 @@
 - **MCP 服务器管理** - Claude Code 和 Codex 双平台 MCP Server 集中配置
 - **技能市场** - Claude Skill 自动下载与安装，内置热门技能仓库
 - **Gemini CLI 管理** - 支持 Google OAuth、API Key、PackyCode 等多种认证方式
-- **深度链接导入** - 通过 ccswitch:// 协议一键导入供应商配置
+- **深度链接导入** - 通过 `ccswitch://` 协议一键导入供应商配置
 - **速度测试** - 并发测试供应商端点延迟，优化选择
 - **自定义提示词** - 管理 Claude/Codex/Gemini 的系统提示词
 - **环境变量检测** - 自动检测并提示环境变量冲突
+- **自动更新** - 内置更新检查，支持 SHA256 完整性校验
 
 ## 下载安装
 
 [最新版本下载](https://github.com/Rogers-F/code-switch-R/releases)
 
-- **Windows**: 下载 `CodeSwitch-amd64-installer.exe` 运行安装，或下载 `CodeSwitch.exe` 便携版
-- **macOS (Apple Silicon)**: 下载 `codeswitch-macos-arm64.zip`，解压后拖入 Applications
-- **macOS (Intel)**: 下载 `codeswitch-macos-amd64.zip`，解压后拖入 Applications
+### Windows
+
+| 文件 | 说明 |
+|------|------|
+| `CodeSwitch-amd64-installer.exe` | NSIS 安装器（推荐首次安装） |
+| `CodeSwitch.exe` | 便携版，直接运行 |
+| `updater.exe` | 静默更新辅助程序 |
+
+### macOS
+
+| 文件 | 说明 |
+|------|------|
+| `codeswitch-macos-arm64.zip` | Apple Silicon (M1/M2/M3) |
+| `codeswitch-macos-amd64.zip` | Intel 芯片 |
+
+解压后将 `.app` 拖入 Applications 文件夹。
+
+### Linux
+
+| 文件 | 说明 |
+|------|------|
+| `CodeSwitch.AppImage` | 跨发行版便携格式（推荐） |
+| `codeswitch_*.deb` | Debian/Ubuntu 安装包 |
+| `codeswitch-*.rpm` | RHEL/Fedora/CentOS 安装包 |
+
+**AppImage 运行方式：**
+```bash
+chmod +x CodeSwitch.AppImage
+./CodeSwitch.AppImage
+```
+
+如遇 FUSE 问题：
+```bash
+./CodeSwitch.AppImage --appimage-extract-and-run
+```
+
+**DEB 安装：**
+```bash
+sudo dpkg -i codeswitch_*.deb
+sudo apt-get install -f  # 安装依赖
+```
+
+**RPM 安装：**
+```bash
+sudo rpm -i codeswitch-*.rpm
+# 或使用 dnf
+sudo dnf install codeswitch-*.rpm
+```
+
+> 所有平台均提供 `.sha256` 校验文件，下载后可验证完整性。
 
 ## 工作原理
 
@@ -48,11 +96,22 @@
 ## 开发指南
 
 ### 环境要求
+
 - Go 1.24+
 - Node.js 18+
 - Wails 3 CLI: `go install github.com/wailsapp/wails/v3/cmd/wails3@latest`
 
+**Linux 额外依赖：**
+```bash
+# Ubuntu/Debian
+sudo apt-get install build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+
+# Fedora
+sudo dnf install gtk3-devel webkit2gtk4.1-devel
+```
+
 ### 开发运行
+
 ```bash
 wails3 task dev
 ```
@@ -65,6 +124,22 @@ wails3 task common:update:build-assets
 
 # 打包当前平台
 wails3 task package
+```
+
+### Linux 打包
+
+```bash
+# 构建二进制
+wails3 task linux:build
+
+# 创建 AppImage
+wails3 task linux:create:appimage
+
+# 创建 DEB 包
+wails3 task linux:create:deb
+
+# 创建 RPM 包
+wails3 task linux:create:rpm
 ```
 
 ### 交叉编译 Windows (macOS)
@@ -80,26 +155,40 @@ env ARCH=amd64 wails3 task windows:package
 推送 tag 即可触发 GitHub Actions 自动构建：
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.2.0
+git push origin v1.2.0
 ```
 
 自动构建产物：
-- `codeswitch-macos-arm64.zip`
-- `codeswitch-macos-amd64.zip`
-- `CodeSwitch-amd64-installer.exe`
-- `CodeSwitch.exe`
+- macOS: `codeswitch-macos-arm64.zip`, `codeswitch-macos-amd64.zip`
+- Windows: `CodeSwitch-amd64-installer.exe`, `CodeSwitch.exe`, `updater.exe`
+- Linux: `CodeSwitch.AppImage`, `codeswitch_*.deb`, `codeswitch-*.rpm`
+
+## 支持的发行版
+
+| 发行版 | 版本 | 格式 |
+|--------|------|------|
+| Ubuntu | 24.04 LTS | DEB / AppImage |
+| Ubuntu | 22.04 LTS | AppImage |
+| Debian | 12 (Bookworm) | DEB / AppImage |
+| Fedora | 39/40 | RPM / AppImage |
+| Linux Mint | 22+ | DEB / AppImage |
+| Arch Linux | Rolling | AppImage |
+
+> Ubuntu 22.04 因 WebKit 版本限制（4.0），建议使用 AppImage。
 
 ## 常见问题
 
 - **macOS 无法打开 .app**: 先执行 `wails3 task common:update:build-assets` 再构建
-- **交叉编译权限问题**: macOS 终端需要完全磁盘访问权限
+- **macOS 交叉编译权限问题**: 终端需要完全磁盘访问权限
+- **Linux AppImage FUSE 问题**: 使用 `--appimage-extract-and-run` 参数运行
 
 ## 技术栈
 
 - **后端**: Go 1.24 + Gin + SQLite
 - **前端**: Vue 3 + TypeScript + Tailwind CSS
 - **框架**: [Wails 3](https://v3.wails.io)
+- **打包**: nFPM (DEB/RPM), appimagetool (AppImage), NSIS (Windows)
 
 ## License
 

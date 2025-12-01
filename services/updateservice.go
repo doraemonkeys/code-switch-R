@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -57,6 +58,9 @@ type UpdateService struct {
 	stateFile        string
 	updateDir        string
 	lockFile         string // 更新锁文件路径
+
+	// 保存最新检查到的更新信息（含 SHA256）
+	latestUpdateInfo *UpdateInfo
 }
 
 // GitHubRelease GitHub Release 结构
@@ -197,17 +201,27 @@ func (us *UpdateService) CheckUpdate() (*UpdateInfo, error) {
 
 	log.Printf("[UpdateService] 下载链接: %s", downloadURL)
 
-	us.mu.Lock()
-	us.latestVersion = release.TagName
-	us.downloadURL = downloadURL
-	us.mu.Unlock()
+	// 查找对应的 SHA256 校验文件
+	sha256Hash := us.findSHA256ForAsset(release.Assets, downloadURL)
+	if sha256Hash != "" {
+		log.Printf("[UpdateService] SHA256: %s", sha256Hash)
+	}
 
-	return &UpdateInfo{
+	updateInfo := &UpdateInfo{
 		Available:    needUpdate,
 		Version:      release.TagName,
 		DownloadURL:  downloadURL,
 		ReleaseNotes: release.Body,
-	}, nil
+		SHA256:       sha256Hash,
+	}
+
+	us.mu.Lock()
+	us.latestVersion = release.TagName
+	us.downloadURL = downloadURL
+	us.latestUpdateInfo = updateInfo // 保存更新信息
+	us.mu.Unlock()
+
+	return updateInfo, nil
 }
 
 // compareVersions 比较版本号
@@ -263,6 +277,62 @@ func (us *UpdateService) findPlatformAsset(assets []struct {
 	}
 
 	log.Printf("[UpdateService] 未找到适配文件 %s", targetName)
+	return ""
+}
+
+// findSHA256ForAsset 查找资产对应的 SHA256 哈希
+// SHA256 文件格式：<hash>  <filename> 或 <hash> <filename>
+func (us *UpdateService) findSHA256ForAsset(assets []struct {
+	Name               string `json:"name"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+	Size               int64  `json:"size"`
+}, assetURL string) string {
+	// 从 URL 提取文件名
+	assetName := filepath.Base(assetURL)
+	sha256FileName := assetName + ".sha256"
+
+	// 查找 SHA256 文件
+	var sha256URL string
+	for _, asset := range assets {
+		if asset.Name == sha256FileName {
+			sha256URL = asset.BrowserDownloadURL
+			break
+		}
+	}
+
+	if sha256URL == "" {
+		log.Printf("[UpdateService] 未找到 SHA256 文件: %s", sha256FileName)
+		return ""
+	}
+
+	// 下载并解析 SHA256 文件
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(sha256URL)
+	if err != nil {
+		log.Printf("[UpdateService] 下载 SHA256 文件失败: %v", err)
+		return ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		log.Printf("[UpdateService] SHA256 文件返回错误状态码: %d", resp.StatusCode)
+		return ""
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("[UpdateService] 读取 SHA256 文件失败: %v", err)
+		return ""
+	}
+
+	// 解析格式：<hash>  <filename> 或 <hash> <filename>
+	content := strings.TrimSpace(string(body))
+	parts := strings.Fields(content)
+	if len(parts) >= 1 {
+		log.Printf("[UpdateService] 获取到 SHA256: %s", parts[0])
+		return parts[0] // 返回哈希值
+	}
+
 	return ""
 }
 
@@ -347,12 +417,17 @@ func (us *UpdateService) PrepareUpdate() error {
 		return fmt.Errorf("更新文件路径为空")
 	}
 
-	// 写入待更新标记
+	// 写入待更新标记（包含 SHA256 用于重启后校验）
 	pendingFile := filepath.Join(filepath.Dir(us.stateFile), ".pending-update")
 	metadata := map[string]interface{}{
 		"version":       us.latestVersion,
 		"download_path": us.updateFilePath,
 		"download_time": time.Now().Format(time.RFC3339),
+	}
+
+	// 持久化 SHA256（关键：重启后 latestUpdateInfo 会丢失）
+	if us.latestUpdateInfo != nil && us.latestUpdateInfo.SHA256 != "" {
+		metadata["sha256"] = us.latestUpdateInfo.SHA256
 	}
 
 	data, err := json.MarshalIndent(metadata, "", "  ")
@@ -393,6 +468,16 @@ func (us *UpdateService) ApplyUpdate() error {
 	downloadPath, ok := metadata["download_path"].(string)
 	if !ok || downloadPath == "" {
 		return fmt.Errorf("元数据中缺少下载路径")
+	}
+
+	// 从元数据恢复 SHA256（关键：重启后内存中的 latestUpdateInfo 为空）
+	if sha256Hash, ok := metadata["sha256"].(string); ok && sha256Hash != "" {
+		us.mu.Lock()
+		us.latestUpdateInfo = &UpdateInfo{
+			SHA256: sha256Hash,
+		}
+		us.mu.Unlock()
+		log.Printf("[UpdateService] 从元数据恢复 SHA256: %s", sha256Hash)
 	}
 
 	// 根据平台执行安装
@@ -492,34 +577,94 @@ func (us *UpdateService) applyUpdateDarwin(zipPath string) error {
 	return nil
 }
 
-// applyUpdateLinux Linux 平台更新
+// applyUpdateLinux Linux 平台更新（增强版）
 func (us *UpdateService) applyUpdateLinux(appImagePath string) error {
-	// 替换当前可执行文件
+	// 1. SHA256 校验
+	us.mu.Lock()
+	var expectedHash string
+	if us.latestUpdateInfo != nil {
+		expectedHash = us.latestUpdateInfo.SHA256
+	}
+	us.mu.Unlock()
+
+	if expectedHash != "" {
+		actualHash, err := calculateSHA256(appImagePath)
+		if err != nil {
+			return fmt.Errorf("计算 SHA256 失败: %w", err)
+		}
+		if !strings.EqualFold(actualHash, expectedHash) {
+			return fmt.Errorf("SHA256 校验失败: 期望 %s, 实际 %s", expectedHash, actualHash)
+		}
+		log.Println("[UpdateService] SHA256 校验通过")
+	}
+
+	// 2. ELF 格式校验
+	f, err := os.Open(appImagePath)
+	if err != nil {
+		return fmt.Errorf("无法打开 AppImage: %w", err)
+	}
+	magic := make([]byte, 4)
+	_, err = f.Read(magic)
+	f.Close()
+	if err != nil || magic[0] != 0x7F || magic[1] != 'E' || magic[2] != 'L' || magic[3] != 'F' {
+		return fmt.Errorf("无效的 AppImage 格式（非 ELF）")
+	}
+
+	// 3. 获取当前可执行文件路径
 	currentExe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("获取当前可执行文件路径失败: %w", err)
 	}
+	currentExe, _ = filepath.EvalSymlinks(currentExe)
 
-	// 备份旧文件
-	backupPath := currentExe + ".bak"
-	_ = os.Rename(currentExe, backupPath)
-
-	// 复制新文件
-	if err := copyUpdateFile(appImagePath, currentExe); err != nil {
-		// 恢复备份
-		_ = os.Rename(backupPath, currentExe)
-		return fmt.Errorf("复制新文件失败: %w", err)
+	// 4. 带时间戳的备份（保留最近 2 个）
+	timestamp := time.Now().Format("20060102-150405")
+	backupPath := currentExe + ".backup-" + timestamp
+	if err := copyUpdateFile(currentExe, backupPath); err != nil {
+		log.Printf("[UpdateService] 备份失败（继续）: %v", err)
 	}
 
-	// 设置执行权限
+	// 5. 替换可执行文件
+	if err := copyUpdateFile(appImagePath, currentExe); err != nil {
+		// 尝试恢复
+		_ = copyUpdateFile(backupPath, currentExe)
+		return fmt.Errorf("替换失败: %w", err)
+	}
+
+	// 6. 设置可执行权限
 	if err := os.Chmod(currentExe, 0o755); err != nil {
 		return fmt.Errorf("设置执行权限失败: %w", err)
 	}
 
-	// 删除备份
-	_ = os.Remove(backupPath)
+	// 7. 清理旧备份（保留最近 2 个）
+	us.cleanupOldBackups(filepath.Dir(currentExe), "*.backup-*", 2)
 
+	log.Println("[UpdateService] Linux 更新应用成功")
 	return nil
+}
+
+// cleanupOldBackups 清理旧备份文件，保留最近 n 个
+func (us *UpdateService) cleanupOldBackups(dir, pattern string, keep int) {
+	matches, _ := filepath.Glob(filepath.Join(dir, pattern))
+	if len(matches) <= keep {
+		return
+	}
+
+	// 按修改时间排序（新 → 旧）
+	sort.Slice(matches, func(i, j int) bool {
+		fi, _ := os.Stat(matches[i])
+		fj, _ := os.Stat(matches[j])
+		if fi == nil || fj == nil {
+			return false
+		}
+		return fi.ModTime().After(fj.ModTime())
+	})
+
+	// 删除旧的
+	for _, f := range matches[keep:] {
+		os.Remove(f)
+		log.Printf("[UpdateService] 清理旧备份: %s", f)
+	}
 }
 
 // RestartApp 重启应用
