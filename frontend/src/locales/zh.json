@@ -242,7 +242,7 @@
     "logs": {
       "eyebrow": "请求追踪",
       "title": "代理请求日志",
-      "subtitle": "查看 Claude Code 与 Codex 代理的最新访问记录。",
+      "subtitle": "查看 Claude Code、Codex 与 Gemini 代理的最新访问记录。",
       "loading": "加载中...",
       "refresh": "刷新",
       "applyFilters": "应用筛选",

@@ -371,21 +371,35 @@ html.dark .mac-sidebar-item:hover {
 	gap: 4px;
 	overflow-x: auto;
 	padding-bottom: 8px;
-	scrollbar-width: none;
-	-ms-overflow-style: none;
+	scrollbar-width: thin;
+	scrollbar-color: rgba(255,255,255,0.2) transparent;
 	width: 100%;
-	justify-content: space-between;
+	justify-content: flex-start;
 }
 
 .contrib-grid::-webkit-scrollbar {
-  display: none;
+	height: 6px;
+}
+
+.contrib-grid::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.contrib-grid::-webkit-scrollbar-thumb {
+	background: rgba(255,255,255,0.2);
+	border-radius: 3px;
+}
+
+.contrib-grid::-webkit-scrollbar-thumb:hover {
+	background: rgba(255,255,255,0.3);
 }
 
 .contrib-column {
 	display: flex;
 	flex-direction: column;
 	gap: 4px;
-	flex: 1;
+	flex: 0 0 auto;
+	min-width: 14px;
 }
 
 .contrib-cell {
@@ -472,19 +486,39 @@ html.dark .mac-sidebar-item:hover {
 
 .contrib-cell.gh-level-0 { opacity: 0.4; }
 
-@media (max-width: 640px) {
+/* 中等尺寸窗口 (640-960px) */
+@media (max-width: 960px) {
 	.contrib-wall {
 		padding: 24px;
+	}
+
+	.contrib-column {
+		min-width: 12px;
 	}
 
 	.contrib-grid {
 		gap: 3px;
 	}
+}
+
+/* 小窗口 (< 640px) */
+@media (max-width: 640px) {
+	.contrib-wall {
+		padding: 16px;
+	}
+
+	.contrib-grid {
+		gap: 2px;
+	}
+
+	.contrib-column {
+		min-width: 10px;
+	}
 
 	.contrib-cell,
 	.legend-box {
-		width: 12px;
-		height: 12px;
+		width: 10px;
+		height: 10px;
 	}
 }
 .automation-section {
@@ -495,13 +529,20 @@ html.dark .mac-sidebar-item:hover {
 
 .section-header {
   display: flex;
-  justify-content: center;
+  justify-content: space-between;
   align-items: center;
   gap: 12px;
   padding-inline: 0;
   flex-wrap: wrap;
   row-gap: 16px;
   position: relative;
+}
+
+/* 左侧占位符，用于居中 tab-group */
+.section-header::before {
+  content: '';
+  flex: 1;
+  min-width: 0;
 }
 
 .tab-group {
@@ -530,17 +571,31 @@ html.dark .mac-sidebar-item:hover {
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  flex: 0 0 auto;
+  flex: 1;
   flex-wrap: wrap;
   justify-content: flex-end;
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  min-width: 0;
 }
 
 .section-header.section-header-solo {
   justify-content: flex-end;
+}
+
+/* 小窗口下 Tab 和 Controls 垂直堆叠 */
+@media (max-width: 700px) {
+  .section-header {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .section-header::before {
+    display: none;
+  }
+
+  .section-controls {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 .main-shell {

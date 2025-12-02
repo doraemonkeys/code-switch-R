@@ -241,7 +241,7 @@
     "logs": {
       "eyebrow": "Request diagnostics",
       "title": "Request logs",
-      "subtitle": "Inspect recent relay activity for Claude Code and Codex providers.",
+      "subtitle": "Inspect recent relay activity for Claude Code, Codex, and Gemini providers.",
       "loading": "Loading...",
       "refresh": "Refresh",
       "applyFilters": "Apply filters",

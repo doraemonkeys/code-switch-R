@@ -94,7 +94,7 @@ const navigate = (path: string) => {
 <template>
   <nav class="mac-sidebar" :class="{ collapsed: isCollapsed }">
     <div class="sidebar-header">
-      <span class="sidebar-title" v-if="!isCollapsed">Code Switch</span>
+      <span class="sidebar-title" v-if="!isCollapsed">Code Switch R</span>
       <button class="collapse-btn" @click="toggleCollapse" :title="isCollapsed ? 'Expand' : 'Collapse'">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline v-if="isCollapsed" points="9 18 15 12 9 6"></polyline>
@@ -200,17 +200,27 @@ const navigate = (path: string) => {
 }
 
 .sidebar-header {
-  padding: 20px 16px 16px;
+  /* macOS 红绿灯按钮区域约 52px 高，添加额外 padding */
+  padding: 52px 16px 16px;
   border-bottom: 1px solid var(--mac-border);
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
+  justify-items: center;
   gap: 8px;
+  /* 拖拽区域 */
+  -webkit-app-region: drag;
+}
+
+.sidebar-header * {
+  /* 按钮等元素需要可点击 */
+  -webkit-app-region: no-drag;
 }
 
 .mac-sidebar.collapsed .sidebar-header {
-  padding: 16px 8px;
-  justify-content: center;
+  padding: 52px 8px 16px;
+  grid-template-columns: 1fr;
+  justify-items: center;
 }
 
 .sidebar-title {
@@ -220,6 +230,8 @@ const navigate = (path: string) => {
   letter-spacing: -0.02em;
   white-space: nowrap;
   overflow: hidden;
+  grid-column: 2;
+  justify-self: center;
 }
 
 .collapse-btn {
@@ -235,6 +247,13 @@ const navigate = (path: string) => {
   justify-content: center;
   transition: all 0.15s ease;
   flex-shrink: 0;
+  grid-column: 3;
+  justify-self: end;
+}
+
+.mac-sidebar.collapsed .collapse-btn {
+  grid-column: 1;
+  justify-self: center;
 }
 
 .collapse-btn:hover {
@@ -258,6 +277,12 @@ html.dark .collapse-btn:hover {
   flex-direction: column;
   gap: 2px;
   overflow-y: auto;
+  scrollbar-width: none; /* Firefox 隐藏滚动条但保留滚动 */
+  -ms-overflow-style: none; /* IE/Edge Legacy 隐藏滚动条 */
+}
+
+.nav-list::-webkit-scrollbar {
+  display: none; /* WebKit 隐藏滚动条 */
 }
 
 .mac-sidebar.collapsed .nav-list {

@@ -33,6 +33,7 @@ type GeminiProvider struct {
 	Category            string            `json:"category,omitempty"`            // official, third_party, custom
 	PartnerPromotionKey string            `json:"partnerPromotionKey,omitempty"` // 用于识别供应商类型
 	Enabled             bool              `json:"enabled"`
+	Level               int               `json:"level,omitempty"`               // 优先级分组 (1-10, 默认 1)
 	EnvConfig           map[string]string `json:"envConfig,omitempty"`           // .env 配置
 	SettingsConfig      map[string]any    `json:"settingsConfig,omitempty"`      // settings.json 配置
 }
