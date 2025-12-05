@@ -121,6 +121,69 @@
           </div>
         </div>
 
+        <!-- 自定义字段 -->
+        <div class="cli-section">
+          <div class="cli-section-header">
+            <span class="custom-icon">🔧</span>
+            <span>{{ t('components.cliConfig.customFields') }}</span>
+            <button
+              type="button"
+              class="cli-add-btn"
+              @click="addCustomField"
+              :title="t('components.cliConfig.addField')"
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path
+                  d="M10 5v10M5 10h10"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </button>
+          </div>
+          <div v-if="customFields.length === 0" class="cli-empty-hint">
+            {{ t('components.cliConfig.noCustomFields') }}
+          </div>
+          <div v-else class="cli-fields">
+            <div
+              v-for="(field, index) in customFields"
+              :key="index"
+              class="cli-custom-field"
+            >
+              <input
+                type="text"
+                :value="field.key"
+                class="cli-field-input cli-key-input"
+                :placeholder="t('components.cliConfig.keyPlaceholder')"
+                @input="updateCustomFieldKey(index, ($event.target as HTMLInputElement).value)"
+              />
+              <input
+                type="text"
+                :value="field.value"
+                class="cli-field-input cli-value-input"
+                :placeholder="t('components.cliConfig.valuePlaceholder')"
+                @input="updateCustomFieldValue(index, ($event.target as HTMLInputElement).value)"
+              />
+              <button
+                type="button"
+                class="cli-delete-btn"
+                @click="removeCustomField(index)"
+                :title="t('components.cliConfig.removeField')"
+              >
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <path
+                    d="M6 6l8 8M6 14l8-8"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- 模板选项 -->
         <div class="cli-template-options">
           <label class="cli-checkbox">
@@ -171,6 +234,21 @@ const loading = ref(false)
 const config = ref<CLIConfig | null>(null)
 const editableValues = ref<Record<string, any>>({})
 const isGlobalTemplate = ref(false)
+const customFields = ref<Array<{ key: string; value: string }>>([])
+
+// 获取所有预置字段的 key（包括锁定和可编辑）
+const presetFieldKeys = computed(() => {
+  const keys = new Set<string>()
+  config.value?.fields.forEach(f => keys.add(f.key))
+  return keys
+})
+
+// 获取所有锁定字段的 key
+const lockedFieldKeys = computed(() => {
+  const keys = new Set<string>()
+  config.value?.fields.filter(f => f.locked).forEach(f => keys.add(f.key))
+  return keys
+})
 
 const platformLabels: Record<CLIPlatform, string> = {
   claude: 'Claude Code',
@@ -223,6 +301,14 @@ const loadConfig = async () => {
       editableValues.value = { ...editableValues.value, ...template.template }
       emitChanges()
     }
+
+    // 叠加外部传入的现有配置（含自定义字段），避免展开后被默认值覆盖
+    if (props.modelValue && Object.keys(props.modelValue).length > 0) {
+      editableValues.value = { ...editableValues.value, ...props.modelValue }
+    }
+
+    // 提取自定义字段（在预置字段列表加载后）
+    extractCustomFields()
   } catch (error) {
     console.error('Failed to load CLI config:', error)
     config.value = null
@@ -256,7 +342,88 @@ const updateFieldJSON = (key: string, jsonStr: string) => {
 }
 
 const emitChanges = () => {
-  emit('update:modelValue', { ...editableValues.value })
+  // 合并自定义字段到 editableValues
+  const merged = { ...editableValues.value }
+  customFields.value.forEach(field => {
+    const key = field.key.trim()
+    if (key) {
+      merged[key] = field.value
+    }
+  })
+  emit('update:modelValue', merged)
+}
+
+// ========== 自定义字段管理 ==========
+
+const addCustomField = () => {
+  customFields.value.push({ key: '', value: '' })
+}
+
+const removeCustomField = (index: number) => {
+  const field = customFields.value[index]
+  // 如果字段已有 key，从 editableValues 中删除
+  if (field.key && editableValues.value[field.key] !== undefined) {
+    delete editableValues.value[field.key]
+  }
+  customFields.value.splice(index, 1)
+  emitChanges()
+}
+
+const updateCustomFieldKey = (index: number, newKey: string) => {
+  const field = customFields.value[index]
+  const oldKey = field.key
+  const normalizedKey = newKey.trim()
+
+  // 空 key 直接清空并同步
+  if (!normalizedKey) {
+    field.key = ''
+    emitChanges()
+    return
+  }
+
+  // 检查是否与锁定字段冲突
+  if (lockedFieldKeys.value.has(normalizedKey)) {
+    showToast(t('components.cliConfig.keyConflictLocked'), 'error')
+    return
+  }
+
+  // 检查是否与预置字段冲突
+  if (presetFieldKeys.value.has(normalizedKey)) {
+    showToast(t('components.cliConfig.keyConflictPreset'), 'error')
+    return
+  }
+
+  // 检查是否与其他自定义字段重复
+  const duplicate = customFields.value.some((f, i) => i !== index && f.key === normalizedKey)
+  if (duplicate) {
+    showToast(t('components.cliConfig.keyDuplicate'), 'error')
+    return
+  }
+
+  // 如果旧 key 存在，从 editableValues 中删除
+  if (oldKey && editableValues.value[oldKey] !== undefined) {
+    delete editableValues.value[oldKey]
+  }
+
+  field.key = normalizedKey
+  emitChanges()
+}
+
+const updateCustomFieldValue = (index: number, value: string) => {
+  customFields.value[index].value = value
+  emitChanges()
+}
+
+// 从 editableValues 中提取自定义字段（不在预置列表中的）
+const extractCustomFields = () => {
+  const custom: Array<{ key: string; value: string }> = []
+  for (const key in editableValues.value) {
+    // 跳过预置字段和嵌套对象（如 env）
+    if (!presetFieldKeys.value.has(key) && typeof editableValues.value[key] !== 'object') {
+      custom.push({ key, value: String(editableValues.value[key]) })
+    }
+  }
+  customFields.value = custom
 }
 
 const handleTemplateChange = async () => {
@@ -291,6 +458,12 @@ const handleRestoreDefault = async () => {
 watch(() => props.modelValue, (newVal) => {
   if (newVal && Object.keys(newVal).length > 0) {
     editableValues.value = { ...newVal }
+    if (config.value) {
+      extractCustomFields()
+    }
+  } else {
+    editableValues.value = {}
+    customFields.value = []
   }
 }, { immediate: true })
 
@@ -434,7 +607,8 @@ onMounted(() => {
 }
 
 .lock-icon,
-.edit-icon {
+.edit-icon,
+.custom-icon {
   font-size: 14px;
 }
 
@@ -498,6 +672,79 @@ onMounted(() => {
 .cli-field-hint {
   font-size: 11px;
   color: var(--mac-text-tertiary);
+}
+
+.cli-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  border: none;
+  border-radius: 4px;
+  background: var(--mac-accent);
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.cli-add-btn:hover {
+  opacity: 0.8;
+}
+
+.cli-add-btn svg {
+  width: 14px;
+  height: 14px;
+  color: white;
+}
+
+.cli-custom-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cli-key-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.cli-value-input {
+  flex: 2;
+  min-width: 0;
+}
+
+.cli-delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.cli-delete-btn:hover {
+  background: var(--mac-error-bg, rgba(255, 59, 48, 0.1));
+}
+
+.cli-delete-btn svg {
+  width: 14px;
+  height: 14px;
+  color: var(--mac-error, #ff3b30);
+}
+
+.cli-empty-hint {
+  font-size: 13px;
+  color: var(--mac-text-tertiary);
+  padding: 12px;
+  text-align: center;
+  background: var(--mac-surface-strong);
+  border-radius: 6px;
 }
 
 .cli-switch {
