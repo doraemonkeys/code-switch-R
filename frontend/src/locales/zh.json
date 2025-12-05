@@ -164,6 +164,11 @@
         "empty": "cc-switch 中的供应商与 MCP 均已同步",
         "error": "导入 cc-switch 配置失败"
       },
+      "firstRun": {
+        "message": "欢迎使用 Code Switch！如果你有 cc-switch 的配置，可以前往设置页导入。",
+        "goToSettings": "前往设置",
+        "dismiss": "稍后"
+      },
       "providers": {
         "requests": "请求数",
         "tokens": "Tokens",
@@ -302,7 +307,8 @@
         "application": "应用设置",
         "exterior": "外观设置",
         "update": "应用更新",
-        "blacklist": "拉黑配置"
+        "blacklist": "拉黑配置",
+        "dataImport": "数据导入"
       },
       "label": {
         "assistant_access": "辅助功能访问权限",
@@ -349,6 +355,22 @@
         "downloading": "下载中 {progress}%",
         "downloadAndInstall": "下载并安装",
         "installAndRestart": "安装并重启"
+      },
+      "import": {
+        "configPath": "配置文件路径",
+        "pathPlaceholder": "输入 cc-switch 配置文件路径",
+        "status": "配置状态",
+        "loading": "加载中...",
+        "configFound": "已找到配置文件",
+        "configNotFound": "未找到配置文件",
+        "pendingCount": "{providers} 个供应商，{mcp} 个 MCP",
+        "action": "导入操作",
+        "importBtn": "导入配置",
+        "importing": "导入中...",
+        "success": "导入成功：{providers} 个供应商，{mcp} 个 MCP 服务器",
+        "nothingToImport": "没有需要导入的配置（可能已全部导入）",
+        "failed": "导入失败",
+        "fileNotFound": "配置文件不存在，请检查路径是否正确"
       }
     },
     "mcp": {

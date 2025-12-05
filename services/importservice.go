@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,11 +13,12 @@ import (
 )
 
 type ConfigImportStatus struct {
-	ConfigExists         bool `json:"config_exists"`
-	PendingProviders     bool `json:"pending_providers"`
-	PendingMCP           bool `json:"pending_mcp"`
-	PendingProviderCount int  `json:"pending_provider_count"`
-	PendingMCPCount      int  `json:"pending_mcp_count"`
+	ConfigExists         bool   `json:"config_exists"`
+	ConfigPath           string `json:"config_path,omitempty"`
+	PendingProviders     bool   `json:"pending_providers"`
+	PendingMCP           bool   `json:"pending_mcp"`
+	PendingProviderCount int    `json:"pending_provider_count"`
+	PendingMCPCount      int    `json:"pending_mcp_count"`
 }
 
 type ConfigImportResult struct {
@@ -37,8 +39,48 @@ func NewImportService(ps *ProviderService, ms *MCPService) *ImportService {
 func (is *ImportService) Start() error { return nil }
 func (is *ImportService) Stop() error  { return nil }
 
+// IsFirstRun 检查是否首次使用（用于显示导入提示）
+func (is *ImportService) IsFirstRun() bool {
+	marker, err := firstRunMarkerPath()
+	if err != nil {
+		log.Printf("⚠️  cc-switch: 获取首次使用标记路径失败: %v", err)
+		return true
+	}
+	if _, err := os.Stat(marker); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return true
+		}
+		log.Printf("⚠️  cc-switch: 检查首次使用标记失败: %v", err)
+		return true
+	}
+	return false
+}
+
+// MarkFirstRunDone 标记首次使用已完成（不再显示导入提示）
+func (is *ImportService) MarkFirstRunDone() error {
+	marker, err := firstRunMarkerPath()
+	if err != nil {
+		log.Printf("⚠️  cc-switch: 获取首次使用标记路径失败: %v", err)
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(marker), 0755); err != nil {
+		log.Printf("⚠️  cc-switch: 创建首次使用标记目录失败: %v", err)
+		return err
+	}
+	if err := os.WriteFile(marker, []byte("1"), 0644); err != nil {
+		log.Printf("⚠️  cc-switch: 写入首次使用标记失败: %v", err)
+		return err
+	}
+	log.Printf("✅ cc-switch: 首次使用标记已创建: %s", marker)
+	return nil
+}
+
 func (is *ImportService) GetStatus() (ConfigImportStatus, error) {
 	status := ConfigImportStatus{}
+	// 填充配置文件路径，便于前端展示
+	if path, err := ccSwitchConfigPath(); err == nil {
+		status.ConfigPath = path
+	}
 	cfg, exists, err := loadCcSwitchConfig()
 	if err != nil {
 		return status, err
@@ -50,9 +92,19 @@ func (is *ImportService) GetStatus() (ConfigImportStatus, error) {
 	return is.evaluateStatus(cfg)
 }
 
-func (is *ImportService) ImportAll() (ConfigImportResult, error) {
+// ImportFromPath 从指定路径导入 cc-switch 配置
+func (is *ImportService) ImportFromPath(path string) (ConfigImportResult, error) {
 	result := ConfigImportResult{}
-	cfg, exists, err := loadCcSwitchConfig()
+	path = strings.TrimSpace(path)
+	if path == "" {
+		err := errors.New("cc-switch: 导入路径为空")
+		log.Printf("⚠️  %v", err)
+		return result, err
+	}
+	path = filepath.Clean(path)
+	result.Status.ConfigPath = path
+
+	cfg, exists, err := loadCcSwitchConfigFromPath(path)
 	if err != nil {
 		return result, err
 	}
@@ -84,8 +136,18 @@ func (is *ImportService) ImportAll() (ConfigImportResult, error) {
 	if err != nil {
 		return result, err
 	}
+	status.ConfigPath = path
 	result.Status = status
 	return result, nil
+}
+
+// ImportAll 从默认路径导入 cc-switch 配置
+func (is *ImportService) ImportAll() (ConfigImportResult, error) {
+	path, err := ccSwitchConfigPath()
+	if err != nil {
+		return ConfigImportResult{}, err
+	}
+	return is.ImportFromPath(path)
 }
 
 func (is *ImportService) evaluateStatus(cfg *ccSwitchConfig) (ConfigImportStatus, error) {
@@ -110,22 +172,38 @@ func (is *ImportService) evaluateStatus(cfg *ccSwitchConfig) (ConfigImportStatus
 func loadCcSwitchConfig() (*ccSwitchConfig, bool, error) {
 	path, err := ccSwitchConfigPath()
 	if err != nil {
+		log.Printf("⚠️  cc-switch: 获取配置路径失败: %v", err)
+		return nil, false, err
+	}
+	return loadCcSwitchConfigFromPath(path)
+}
+
+func loadCcSwitchConfigFromPath(path string) (*ccSwitchConfig, bool, error) {
+	path = filepath.Clean(strings.TrimSpace(path))
+	if path == "" {
+		err := errors.New("cc-switch: 配置路径为空")
+		log.Printf("⚠️  %v", err)
 		return nil, false, err
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
+			log.Printf("ℹ️  cc-switch: 配置文件不存在: %s", path)
 			return nil, false, nil
 		}
+		log.Printf("⚠️  cc-switch: 读取配置文件失败: %s - %v", path, err)
 		return nil, false, err
 	}
 	if len(data) == 0 {
+		log.Printf("ℹ️  cc-switch: 配置文件为空: %s", path)
 		return &ccSwitchConfig{}, true, nil
 	}
 	var cfg ccSwitchConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
+		log.Printf("⚠️  cc-switch: JSON 解析失败: %s - %v", path, err)
 		return nil, true, err
 	}
+	log.Printf("✅ cc-switch: 配置文件加载成功: %s", path)
 	return &cfg, true, nil
 }
 
@@ -135,6 +213,14 @@ func ccSwitchConfigPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(home, ".cc-switch", "config.json"), nil
+}
+
+func firstRunMarkerPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".code-switch", ".import_prompted"), nil
 }
 
 type ccSwitchConfig struct {
@@ -275,6 +361,7 @@ func parseProviderEntry(kind, key string, entry ccProviderEntry) (providerCandid
 		apiURL := strings.TrimSpace(entry.Settings.Env["ANTHROPIC_BASE_URL"])
 		apiKey := strings.TrimSpace(entry.Settings.Env["ANTHROPIC_AUTH_TOKEN"])
 		if apiURL == "" || apiKey == "" {
+			log.Printf("ℹ️  cc-switch: 跳过 claude provider [%s]: 缺少 ANTHROPIC_BASE_URL 或 ANTHROPIC_AUTH_TOKEN", key)
 			return providerCandidate{}, false
 		}
 		return providerCandidate{Name: name, APIURL: apiURL, APIKey: apiKey, Site: site}, true
@@ -286,10 +373,12 @@ func parseProviderEntry(kind, key string, entry ccProviderEntry) (providerCandid
 			entry.Settings.Env["OPENAI_API_KEY"],
 		)
 		if apiKey == "" {
+			log.Printf("ℹ️  cc-switch: 跳过 codex provider [%s]: 缺少 OPENAI_API_KEY", key)
 			return providerCandidate{}, false
 		}
 		apiURL := resolveCodexAPIURL(entry.Settings.Config)
 		if apiURL == "" {
+			log.Printf("ℹ️  cc-switch: 跳过 codex provider [%s]: 无法解析 API URL (TOML 配置无效或缺失)", key)
 			return providerCandidate{}, false
 		}
 		return providerCandidate{Name: name, APIURL: apiURL, APIKey: apiKey, Site: site}, true

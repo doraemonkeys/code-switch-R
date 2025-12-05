@@ -2,6 +2,7 @@ import { Call } from '@wailsio/runtime'
 
 export type ConfigImportStatus = {
   config_exists: boolean
+  config_path?: string
   pending_providers: boolean
   pending_mcp: boolean
   pending_provider_count: number
@@ -30,4 +31,21 @@ export const fetchConfigImportStatus = async (): Promise<ConfigImportStatus> => 
 export const importFromCcSwitch = async (): Promise<ConfigImportResult> => {
   const response = await Call.ByName('codeswitch/services.ImportService.ImportAll')
   return response as ConfigImportResult
+}
+
+// 从指定路径导入配置
+export const importFromPath = async (path: string): Promise<ConfigImportResult> => {
+  const response = await Call.ByName('codeswitch/services.ImportService.ImportFromPath', path)
+  return response as ConfigImportResult
+}
+
+// 检查是否首次使用（用于显示导入提示）
+export const isFirstRun = async (): Promise<boolean> => {
+  const response = await Call.ByName('codeswitch/services.ImportService.IsFirstRun')
+  return response as boolean
+}
+
+// 标记首次使用已完成（不再显示导入提示）
+export const markFirstRunDone = async (): Promise<void> => {
+  await Call.ByName('codeswitch/services.ImportService.MarkFirstRunDone')
 }

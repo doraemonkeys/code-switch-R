@@ -441,13 +441,6 @@ func (s *CliConfigService) getCodexConfig() (*CLIConfig, error) {
 			Hint:   "由代理管理，指向本地代理服务",
 			Type:   "string",
 		},
-		CLIConfigField{
-			Key:    "model_providers.code-switch.env_key",
-			Value:  "OPENAI_API_KEY",
-			Locked: true,
-			Hint:   "代理使用的密钥环境变量名",
-			Type:   "string",
-		},
 	)
 
 	// 可编辑字段
@@ -522,7 +515,6 @@ func (s *CliConfigService) saveCodexConfig(editable map[string]interface{}) erro
 	}
 	provider["name"] = "code-switch"
 	provider["base_url"] = s.baseURL()
-	provider["env_key"] = "OPENAI_API_KEY"
 	provider["wire_api"] = "responses"
 	provider["requires_openai_auth"] = false
 	modelProviders["code-switch"] = provider

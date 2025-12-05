@@ -163,6 +163,11 @@
         "empty": "Everything from cc-switch is already in sync",
         "error": "Failed to import cc-switch config"
       },
+      "firstRun": {
+        "message": "Welcome to Code Switch! If you have cc-switch config, you can import it from Settings.",
+        "goToSettings": "Go to Settings",
+        "dismiss": "Later"
+      },
       "providers": {
         "requests": "Requests",
         "tokens": "Tokens",
@@ -301,7 +306,8 @@
         "exterior": "Appearance settings",
         "power": "Permission settings",
         "update": "Application update",
-        "blacklist": "Blacklist Settings"
+        "blacklist": "Blacklist Settings",
+        "dataImport": "Data Import"
       },
       "label": {
         "assistant_access": "Accessibility permissions",
@@ -348,6 +354,22 @@
         "downloading": "Downloading {progress}%",
         "downloadAndInstall": "Download and install",
         "installAndRestart": "Install and restart"
+      },
+      "import": {
+        "configPath": "Config file path",
+        "pathPlaceholder": "Enter cc-switch config file path",
+        "status": "Config status",
+        "loading": "Loading...",
+        "configFound": "Config file found",
+        "configNotFound": "Config file not found",
+        "pendingCount": "{providers} providers, {mcp} MCPs",
+        "action": "Import action",
+        "importBtn": "Import config",
+        "importing": "Importing...",
+        "success": "Imported: {providers} providers, {mcp} MCP servers",
+        "nothingToImport": "Nothing to import (all may have been imported)",
+        "failed": "Import failed",
+        "fileNotFound": "Config file not found, please check the path"
       }
     },
     "mcp": {
