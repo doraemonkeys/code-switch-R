@@ -88,9 +88,24 @@ func (ps *ProviderService) saveProvidersLocked(kind string, providers []Provider
 		return err
 	}
 
+	// 加载现有配置，用于检查 name 是否被修改
+	existingProviders, err := ps.LoadProviders(kind)
+	if err != nil {
+		return err
+	}
+	nameByID := make(map[int64]string, len(existingProviders))
+	for _, p := range existingProviders {
+		nameByID[p.ID] = p.Name
+	}
+
 	// 验证每个 provider 的配置
 	validationErrors := make([]string, 0)
 	for _, p := range providers {
+		// 规则：name 不可修改（黑名单/统计以 name 为 key，改名会导致数据丢失）
+		if oldName, ok := nameByID[p.ID]; ok && oldName != p.Name {
+			return fmt.Errorf("provider id %d 的 name 不可修改（会导致黑名单和统计数据丢失）", p.ID)
+		}
+
 		// 验证模型配置
 		if errs := p.ValidateConfiguration(); len(errs) > 0 {
 			for _, errMsg := range errs {
