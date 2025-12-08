@@ -185,24 +185,29 @@ func (cts *ConnectivityTestService) TestProvider(ctx context.Context, provider P
 
 // buildTestRequest 根据平台构建测试请求体
 func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *Provider) ([]byte, string) {
-	var model string
 	var contentField string
 
+	// 平台默认模型
+	platformKey := strings.ToLower(platform)
+	defaults := map[string]string{
+		"claude": "claude-haiku-4-5-20251001",
+		"codex":  "gpt-5.1",
+		"gemini": "gemini-2.5-flash",
+	}
+
+	// 优先使用用户配置的测试模型
+	model := strings.TrimSpace(provider.ConnectivityTestModel)
+	if model == "" {
+		model = defaults[platformKey]
+	}
+	if model == "" {
+		model = "gpt-3.5-turbo" // 兜底
+	}
+
 	// 确定模型名称
-	switch strings.ToLower(platform) {
+	switch platformKey {
 	case "claude":
-		// 使用更通用的模型名，大多数第三方供应商都支持
-		model = "claude-sonnet-4-20250514"
 		contentField = "content"
-		// 如果 provider 配置了支持的模型，使用第一个
-		if provider.SupportedModels != nil && len(provider.SupportedModels) > 0 {
-			for m := range provider.SupportedModels {
-				if provider.SupportedModels[m] {
-					model = m
-					break
-				}
-			}
-		}
 		// Claude/Anthropic 格式
 		reqBody := map[string]interface{}{
 			"model":      model,
@@ -215,16 +220,7 @@ func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *
 		return data, contentField
 
 	case "codex":
-		model = "gpt-4o-mini"
 		contentField = "choices"
-		if provider.SupportedModels != nil && len(provider.SupportedModels) > 0 {
-			for m := range provider.SupportedModels {
-				if provider.SupportedModels[m] {
-					model = m
-					break
-				}
-			}
-		}
 		// OpenAI 格式
 		reqBody := map[string]interface{}{
 			"model":      model,
@@ -240,6 +236,7 @@ func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *
 		contentField = "candidates"
 		// Gemini 格式
 		reqBody := map[string]interface{}{
+			"model": model,
 			"contents": []map[string]interface{}{
 				{
 					"parts": []map[string]string{
@@ -253,7 +250,6 @@ func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *
 
 	default:
 		// 默认使用 OpenAI 格式
-		model = "gpt-3.5-turbo"
 		contentField = "choices"
 		reqBody := map[string]interface{}{
 			"model":      model,

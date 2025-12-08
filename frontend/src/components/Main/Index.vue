@@ -604,6 +604,27 @@
                   <span class="field-hint">{{ t('components.main.form.hints.connectivityCheck') }}</span>
                 </div>
 
+                <div v-if="modalState.form.connectivityCheck" class="form-field">
+                  <span>{{ t('components.main.form.labels.connectivityTestModel') }}</span>
+                  <div class="model-select-combo">
+                    <select
+                      v-model="modalState.form.connectivityTestModel"
+                      class="model-select"
+                    >
+                      <option value="">{{ t('components.main.form.placeholders.connectivityTestModel') }}</option>
+                      <option v-for="model in connectivityTestModelOptions" :key="model" :value="model">
+                        {{ model }}
+                      </option>
+                    </select>
+                    <BaseInput
+                      v-model="modalState.form.connectivityTestModel"
+                      :placeholder="t('components.main.form.placeholders.customModel')"
+                      class="model-input"
+                    />
+                  </div>
+                  <span class="field-hint">{{ t('components.main.form.hints.connectivityTestModel') }}</span>
+                </div>
+
                 <footer class="form-actions">
                   <BaseButton variant="outline" type="button" @click="closeModal">
                     {{ t('components.main.form.actions.cancel') }}
@@ -1689,6 +1710,16 @@ const selectedIndex = ref(0)
 const activeTab = computed<ProviderTab>(() => tabs[selectedIndex.value]?.id ?? tabs[0].id)
 const activeCards = computed(() => cards[activeTab.value] ?? [])
 
+// 连通性测试模型选项（根据平台）
+const connectivityTestModelOptions = computed(() => {
+  const options: Record<string, string[]> = {
+    claude: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-5-20250929'],
+    codex: ['gpt-5.1', 'gpt-5.1-codex'],
+    gemini: ['gemini-2.5-flash', 'gemini-2.5-pro'],
+  }
+  return options[modalState.tabId] || options.claude
+})
+
 // 监听 tab 切换，立即刷新黑名单和连通性状态
 watch(activeTab, (newTab) => {
   void loadBlacklistStatus(newTab)
@@ -1767,6 +1798,7 @@ type VendorForm = {
   level?: number
   cliConfig?: Record<string, any>
   connectivityCheck?: boolean
+  connectivityTestModel?: string
 }
 
 const iconOptions = Object.keys(lobeIcons).sort((a, b) => a.localeCompare(b))
@@ -1784,6 +1816,7 @@ const defaultFormValues = (): VendorForm => ({
   modelMapping: {},
   cliConfig: {},
   connectivityCheck: false,
+  connectivityTestModel: '',
 })
 
 // Level 描述文本映射（1-10）
@@ -1862,6 +1895,7 @@ const openEditModal = (card: AutomationCard) => {
     modelMapping: card.modelMapping || {},
     cliConfig: card.cliConfig || {},
     connectivityCheck: card.connectivityCheck || false,
+    connectivityTestModel: card.connectivityTestModel || '',
   })
   modalState.errors.apiUrl = ''
   modalState.open = true
@@ -1908,6 +1942,7 @@ const submitModal = async () => {
       modelMapping: modalState.form.modelMapping || {},
       cliConfig: modalState.form.cliConfig || {},
       connectivityCheck: modalState.form.connectivityCheck || false,
+      connectivityTestModel: modalState.form.connectivityTestModel || '',
     })
     if (prevLevel !== nextLevel) {
       sortProvidersByLevel(list)
@@ -1929,6 +1964,7 @@ const submitModal = async () => {
       modelMapping: modalState.form.modelMapping || {},
       cliConfig: modalState.form.cliConfig || {},
       connectivityCheck: modalState.form.connectivityCheck || false,
+      connectivityTestModel: modalState.form.connectivityTestModel || '',
     }
     list.push(newCard)
     sortProvidersByLevel(list)

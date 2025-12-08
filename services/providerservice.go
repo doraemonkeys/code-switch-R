@@ -35,6 +35,9 @@ type Provider struct {
 	// 连通性检测开关 - 是否启用自动连通性检测
 	ConnectivityCheck bool `json:"connectivityCheck,omitempty"`
 
+	// 连通性检测模型 - 用户可选择或自定义测试模型
+	ConnectivityTestModel string `json:"connectivityTestModel,omitempty"`
+
 	// 内部字段：配置验证错误（不持久化）
 	configErrors []string `json:"-"`
 }
