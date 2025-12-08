@@ -94,16 +94,17 @@ func main() {
 
 	providerService := services.NewProviderService()
 	settingsService := services.NewSettingsService()
-	blacklistService := services.NewBlacklistService(settingsService)
+	autoStartService := services.NewAutoStartService()
+	appSettings := services.NewAppSettingsService(autoStartService)
+	notificationService := services.NewNotificationService(appSettings) // 通知服务
+	blacklistService := services.NewBlacklistService(settingsService, notificationService)
 	geminiService := services.NewGeminiService("127.0.0.1:18100")
-	providerRelay := services.NewProviderRelayService(providerService, geminiService, blacklistService, ":18100")
+	providerRelay := services.NewProviderRelayService(providerService, geminiService, blacklistService, notificationService, ":18100")
 	claudeSettings := services.NewClaudeSettingsService(providerRelay.Addr())
 	codexSettings := services.NewCodexSettingsService(providerRelay.Addr())
 	cliConfigService := services.NewCliConfigService(providerRelay.Addr())
 	logService := services.NewLogService()
-	autoStartService := services.NewAutoStartService()
 	updateService := services.NewUpdateService(AppVersion)
-	appSettings := services.NewAppSettingsService(autoStartService)
 	mcpService := services.NewMCPService()
 	skillService := services.NewSkillService()
 	promptService := services.NewPromptService()
@@ -209,6 +210,9 @@ func main() {
 			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
 	})
+
+	// 设置 NotificationService 的 App 引用，用于发送事件到前端
+	notificationService.SetApp(app)
 
 	app.OnShutdown(func() {
 		_ = providerRelay.Stop()

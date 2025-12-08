@@ -61,7 +61,11 @@
     "start": "Start Test",
     "testing": "Testing",
     "empty": "Add API endpoints to start testing",
-    "failed": "Failed"
+    "failed": "Failed",
+    "syncButton": "Refresh Provider Endpoints",
+    "syncing": "Syncing...",
+    "loadingTip": "Syncing provider endpoints from home page...",
+    "syncError": "Sync failed, please refresh manually"
   },
   "envcheck": {
     "hero": {
@@ -174,7 +178,8 @@
         "cost": "Cost",
         "successRate": "Success rate",
         "loading": "Refreshing...",
-        "noData": "No data yet today"
+        "noData": "No data yet today",
+        "lastUsed": "In Use"
       },
       "form": {
         "createTitle": "Add vendor",
@@ -323,7 +328,11 @@
       "streamOff": "Single response",
       "back": "Back to home",
       "nextRefresh": "Next refresh in {seconds}s",
-      "query": "Query"
+      "query": "Query",
+      "costDetail": {
+        "title": "Today's Cost Breakdown",
+        "empty": "No cost records today"
+      }
     },
     "general": {
       "title": {
@@ -346,6 +355,8 @@
         "heatmap": "Show dashboard heatmap",
         "homeTitle": "Show home title",
         "autoStart": "Launch at login",
+        "switchNotify": "Switch Notification",
+        "switchNotifyHint": "Send system notification when provider switches or gets blacklisted",
         "autoUpdate": "Automatic update",
         "autoConnectivityTest": "Auto connectivity test",
         "autoConnectivityTestHint": "Test enabled providers every minute",
