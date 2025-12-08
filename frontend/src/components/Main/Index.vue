@@ -1775,19 +1775,39 @@ const connectivityEndpointOptions = [
 const testingConnectivity = ref(false)
 const connectivityTestResult = ref<{ success: boolean; message: string } | null>(null)
 
+// 获取平台默认端点
+const getDefaultEndpoint = (platform: string) => {
+  const defaults: Record<string, string> = {
+    claude: '/v1/messages',
+    codex: '/responses',
+  }
+  return defaults[platform] || '/v1/chat/completions'
+}
+
+// 获取平台默认认证方式
+const getDefaultAuthType = (platform: string) => {
+  const defaults: Record<string, string> = {
+    claude: 'x-api-key',
+    codex: 'bearer',
+  }
+  return defaults[platform] || 'bearer'
+}
+
 // 手动测试连通性
 const handleTestConnectivity = async () => {
   testingConnectivity.value = true
   connectivityTestResult.value = null
 
   try {
+    const platform = modalState.tabId
     const result = await Call.ByName(
       'codeswitch/services.ConnectivityTestService.TestProviderManual',
+      platform,
       modalState.form.apiUrl,
       modalState.form.apiKey,
       modalState.form.connectivityTestModel || '',
-      modalState.form.connectivityTestEndpoint || '/v1/messages',
-      modalState.form.connectivityAuthType || 'x-api-key'
+      modalState.form.connectivityTestEndpoint || getDefaultEndpoint(platform),
+      modalState.form.connectivityAuthType || getDefaultAuthType(platform)
     )
 
     connectivityTestResult.value = {
@@ -1892,7 +1912,7 @@ type VendorForm = {
 const iconOptions = Object.keys(lobeIcons).sort((a, b) => a.localeCompare(b))
 const defaultIconKey = iconOptions[0] ?? 'aicoding'
 
-const defaultFormValues = (): VendorForm => ({
+const defaultFormValues = (platform?: string): VendorForm => ({
   name: '',
   apiUrl: '',
   apiKey: '',
@@ -1905,8 +1925,8 @@ const defaultFormValues = (): VendorForm => ({
   cliConfig: {},
   connectivityCheck: false,
   connectivityTestModel: '',
-  connectivityTestEndpoint: '/v1/messages',
-  connectivityAuthType: 'x-api-key',
+  connectivityTestEndpoint: getDefaultEndpoint(platform || 'claude'),
+  connectivityAuthType: getDefaultAuthType(platform || 'claude'),
 })
 
 // Level 描述文本映射（1-10）
@@ -1964,7 +1984,8 @@ const openCreateModal = () => {
   modalState.tabId = activeTab.value
   modalState.editingId = null
   editingCard.value = null
-  Object.assign(modalState.form, defaultFormValues())
+  Object.assign(modalState.form, defaultFormValues(activeTab.value))
+  connectivityTestResult.value = null
   modalState.errors.apiUrl = ''
   modalState.open = true
 }

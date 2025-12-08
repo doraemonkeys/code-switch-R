@@ -126,10 +126,7 @@ func (cts *ConnectivityTestService) TestProvider(ctx context.Context, provider P
 	// 设置 Headers
 	req.Header.Set("Content-Type", "application/json")
 	if provider.APIKey != "" {
-		authType := strings.ToLower(strings.TrimSpace(provider.ConnectivityAuthType))
-		if authType == "" {
-			authType = "x-api-key" // 默认
-		}
+		authType := cts.getEffectiveAuthType(&provider, platform)
 		if authType == "x-api-key" {
 			req.Header.Set("x-api-key", provider.APIKey)
 			req.Header.Set("anthropic-version", "2023-06-01")
@@ -185,6 +182,40 @@ func (cts *ConnectivityTestService) TestProvider(ctx context.Context, provider P
 	return result
 }
 
+// getEffectiveEndpoint 获取有效端点（含平台默认值）
+func (cts *ConnectivityTestService) getEffectiveEndpoint(provider *Provider, platform string) string {
+	endpoint := strings.TrimSpace(provider.ConnectivityTestEndpoint)
+	if endpoint != "" {
+		return endpoint
+	}
+	// 平台默认端点
+	switch strings.ToLower(platform) {
+	case "claude":
+		return "/v1/messages"
+	case "codex":
+		return "/responses"
+	default:
+		return "/v1/chat/completions"
+	}
+}
+
+// getEffectiveAuthType 获取有效认证方式（含平台默认值）
+func (cts *ConnectivityTestService) getEffectiveAuthType(provider *Provider, platform string) string {
+	authType := strings.ToLower(strings.TrimSpace(provider.ConnectivityAuthType))
+	if authType != "" {
+		return authType
+	}
+	// 平台默认认证方式
+	switch strings.ToLower(platform) {
+	case "claude":
+		return "x-api-key"
+	case "codex":
+		return "bearer"
+	default:
+		return "bearer"
+	}
+}
+
 // buildTestRequest 根据端点构建测试请求体
 func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *Provider) ([]byte, string) {
 	// 平台默认模型
@@ -203,8 +234,8 @@ func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *
 		model = "gpt-3.5-turbo"
 	}
 
-	// 根据端点判断请求格式
-	endpoint := strings.ToLower(strings.TrimSpace(provider.ConnectivityTestEndpoint))
+	// 获取有效端点（含平台默认值）
+	endpoint := strings.ToLower(cts.getEffectiveEndpoint(provider, platform))
 
 	// Anthropic 格式: /v1/messages
 	if strings.Contains(endpoint, "/messages") {
@@ -312,25 +343,11 @@ func (cts *ConnectivityTestService) truncateMessage(msg string) string {
 // buildTargetURL 根据用户配置的端点构建目标 URL
 func (cts *ConnectivityTestService) buildTargetURL(provider *Provider, platform string) string {
 	baseURL := strings.TrimSuffix(provider.APIURL, "/")
-
-	// 优先使用用户配置的端点
-	endpoint := strings.TrimSpace(provider.ConnectivityTestEndpoint)
-	if endpoint != "" {
-		if !strings.HasPrefix(endpoint, "/") {
-			endpoint = "/" + endpoint
-		}
-		return baseURL + endpoint
+	endpoint := cts.getEffectiveEndpoint(provider, platform)
+	if !strings.HasPrefix(endpoint, "/") {
+		endpoint = "/" + endpoint
 	}
-
-	// 默认端点（按平台）
-	switch strings.ToLower(platform) {
-	case "claude":
-		return baseURL + "/v1/messages"
-	case "codex":
-		return baseURL + "/responses"
-	default:
-		return baseURL + "/v1/chat/completions"
-	}
+	return baseURL + endpoint
 }
 
 // isTimeoutError 检测错误是否为超时类型
@@ -611,12 +628,18 @@ type ManualTestResult struct {
 
 // TestProviderManual 手动测试供应商连通性（供前端测试按钮调用）
 func (cts *ConnectivityTestService) TestProviderManual(
+	platform string,
 	apiURL string,
 	apiKey string,
 	model string,
 	endpoint string,
 	authType string,
 ) ManualTestResult {
+	// 平台参数校验
+	if platform == "" {
+		platform = "claude"
+	}
+
 	// 构建临时 Provider
 	provider := Provider{
 		APIURL:                   apiURL,
@@ -629,7 +652,7 @@ func (cts *ConnectivityTestService) TestProviderManual(
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	result := cts.TestProvider(ctx, provider, "claude")
+	result := cts.TestProvider(ctx, provider, platform)
 
 	return ManualTestResult{
 		Success:   result.Status == StatusAvailable || result.Status == StatusDegraded,
