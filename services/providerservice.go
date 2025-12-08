@@ -299,7 +299,8 @@ func (p *Provider) ValidateConfiguration() []string {
 	errors := make([]string, 0)
 
 	// 规则 1：ModelMapping 的 value 必须在 SupportedModels 中
-	if p.ModelMapping != nil && p.SupportedModels != nil {
+	// 仅当两者都有实际内容时才校验（空 map 不触发校验）
+	if len(p.ModelMapping) > 0 && len(p.SupportedModels) > 0 {
 		for externalModel, internalModel := range p.ModelMapping {
 			// 检查是否为通配符映射
 			if strings.Contains(internalModel, "*") {
@@ -333,17 +334,7 @@ func (p *Provider) ValidateConfiguration() []string {
 	// 允许仅配置 modelMapping（无 supportedModels 时不阻塞保存）
 	// 用户可能只想映射模型名，不需要白名单过滤
 
-	// 规则 3：检测自映射（通常无意义，但不是错误）
-	if p.ModelMapping != nil {
-		for external, internal := range p.ModelMapping {
-			if external == internal {
-				errors = append(errors, fmt.Sprintf(
-					"警告：模型 '%s' 映射到自身，这通常无意义",
-					external,
-				))
-			}
-		}
-	}
+	// 规则 3 移除：自映射不会破坏功能，最多是无效配置，不阻塞保存
 
 	p.configErrors = errors
 	return errors
