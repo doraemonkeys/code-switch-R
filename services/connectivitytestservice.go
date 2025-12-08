@@ -191,7 +191,8 @@ func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *
 	// 确定模型名称
 	switch strings.ToLower(platform) {
 	case "claude":
-		model = "claude-3-haiku-20240307"
+		// 使用更通用的模型名，大多数第三方供应商都支持
+		model = "claude-sonnet-4-20250514"
 		contentField = "content"
 		// 如果 provider 配置了支持的模型，使用第一个
 		if provider.SupportedModels != nil && len(provider.SupportedModels) > 0 {
