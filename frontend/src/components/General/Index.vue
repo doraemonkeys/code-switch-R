@@ -10,7 +10,6 @@ import { checkUpdate, downloadUpdate, restartApp, getUpdateState, setAutoCheckEn
 import { fetchCurrentVersion } from '../../services/version'
 import { getBlacklistSettings, updateBlacklistSettings, getLevelBlacklistEnabled, setLevelBlacklistEnabled, getBlacklistEnabled, setBlacklistEnabled, type BlacklistSettings } from '../../services/settings'
 import { fetchConfigImportStatus, importFromPath, type ConfigImportStatus } from '../../services/configImport'
-import { setAutoTestEnabled } from '../../services/connectivity'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()

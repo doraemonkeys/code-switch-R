@@ -742,6 +742,11 @@ func (bs *BlacklistService) GetBlacklistStatus(platform string) ([]BlacklistStat
 	return statuses, nil
 }
 
+// IsBlacklistEnabled 返回拉黑总开关状态（用于固定拉黑模式判断）
+func (bs *BlacklistService) IsBlacklistEnabled() bool {
+	return bs.settingsService.IsBlacklistEnabled()
+}
+
 // IsLevelBlacklistEnabled 返回等级拉黑功能是否开启
 // 用于 proxyHandler 判断是否启用自动降级
 func (bs *BlacklistService) IsLevelBlacklistEnabled() bool {

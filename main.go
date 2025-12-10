@@ -169,13 +169,18 @@ func main() {
 	go func() {
 		time.Sleep(3 * time.Second) // 延迟3秒，等待应用初始化
 		settings, err := appSettings.GetAppSettings()
+
+		// 默认启用自动监控（保持开箱即用）
+		autoEnabled := true
 		if err != nil {
-			log.Printf("读取应用设置失败: %v", err)
-			return
+			log.Printf("读取应用设置失败（使用默认值）: %v", err)
+		} else {
+			// 读取成功，使用配置值
+			autoEnabled = settings.AutoConnectivityTest
 		}
 
 		// 旧的 AutoConnectivityTest 字段现在控制可用性监控
-		if settings.AutoConnectivityTest {
+		if autoEnabled {
 			healthCheckService.SetAutoAvailabilityPolling(true)
 			log.Println("✅ 自动可用性监控已启动")
 		} else {
