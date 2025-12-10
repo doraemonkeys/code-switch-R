@@ -428,7 +428,7 @@ func (hcs *HealthCheckService) RunSingleCheck(platform string, providerID int64)
 	}
 
 	// 执行检测（使用 Provider 配置的有效超时）
-	timeout := hcs.getEffectiveTimeout(*targetProvider)
+	timeout := hcs.getEffectiveTimeout(targetProvider)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Millisecond)
 	defer cancel()
 
