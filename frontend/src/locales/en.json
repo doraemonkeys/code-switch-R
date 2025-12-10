@@ -48,6 +48,7 @@
       "operationalThresholdHint": "Response latency below this is considered operational"
     },
     "editConfig": "Edit Config",
+    "enableToMonitor": "Please enable availability monitoring first",
     "configTitle": "Advanced Availability Config",
     "field": {
       "testModel": "Test Model",
@@ -612,7 +613,11 @@
           "name": "Please enter a server name",
           "command": "Command is required for stdio servers",
           "url": "HTTP servers require a URL",
-          "duplicate": "This name already exists"
+          "duplicate": "This name already exists",
+          "noPlatformSelected": "Please select at least one platform (Claude Code or Codex)"
+        },
+        "warnings": {
+          "savedWithPlaceholders": "✅ Config saved, but not synced to Claude/Codex due to placeholders ({vars}). Please fill placeholders and save again."
         },
         "deleteTitle": "Delete MCP server",
         "deleteMessage": "Are you sure you want to delete {name}? This action cannot be undone."
@@ -620,6 +625,10 @@
       "jsonImport": {
         "tabForm": "Form",
         "tabJson": "Paste JSON",
+        "jsonHint": "Supports Claude Desktop, array, single object formats",
+        "loadExample": "Load Example",
+        "formatSingle": "Single Object",
+        "formatArray": "Array",
         "inputLabel": "Paste MCP Config JSON",
         "inputPlaceholder": "Supports Claude Desktop format, array format, or single server format...",
         "formatHint": "Supported formats: {\"mcpServers\": {...}}, [{...}], or {\"command\": ...}",

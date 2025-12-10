@@ -183,8 +183,8 @@
       :title="modalState.editingName ? t('components.mcp.form.editTitle') : t('components.mcp.form.createTitle')"
       @close="closeModal"
     >
-      <!-- Tab 切换（仅新建时显示） -->
-      <div v-if="!modalState.editingName" class="modal-tabs">
+      <!-- Tab 切换 -->
+      <div class="modal-tabs">
         <button
           type="button"
           class="modal-tab"
@@ -301,6 +301,27 @@
       <div v-else-if="modalMode === 'json'" class="json-import-section">
         <!-- JSON 输入区 -->
         <div v-if="!jsonParseResult" class="json-input-area">
+          <!-- 说明 + 示例按钮 -->
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-sm text-[var(--mac-text-secondary)]">
+              {{ t('components.mcp.jsonImport.jsonHint') }}
+            </span>
+            <button
+              type="button"
+              class="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+              @click="fillExampleJson"
+            >
+              {{ t('components.mcp.jsonImport.loadExample') }}
+            </button>
+          </div>
+
+          <!-- 格式说明 -->
+          <div class="text-xs text-[var(--mac-text-secondary)] bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg mb-3 space-y-1">
+            <div>✅ Claude Desktop: <code class="px-1 bg-white dark:bg-gray-800 rounded">{"mcpServers": {"name": {...}}}</code></div>
+            <div>✅ {{ t('components.mcp.jsonImport.formatSingle') }}: <code class="px-1 bg-white dark:bg-gray-800 rounded">{"command": "...", "args": [...]}</code></div>
+            <div>✅ {{ t('components.mcp.jsonImport.formatArray') }}: <code class="px-1 bg-white dark:bg-gray-800 rounded">[{...}, {...}]</code></div>
+          </div>
+
           <label class="form-field">
             <span>{{ t('components.mcp.jsonImport.inputLabel') }}</span>
             <BaseTextarea
@@ -667,6 +688,18 @@ const switchModalMode = (mode: ModalMode) => {
   modalError.value = ''
 }
 
+// 填充示例 JSON
+const fillExampleJson = () => {
+  jsonInput.value = JSON.stringify({
+    "command": "npx",
+    "args": ["-y", "@anthropic-ai/mcp-server-google-maps"],
+    "env": {
+      "GOOGLE_MAPS_API_KEY": "{YOUR_API_KEY}"
+    }
+  }, null, 2)
+  jsonError.value = ''
+}
+
 // 解析 JSON 输入
 const handleParseJSON = async () => {
   const input = jsonInput.value.trim()
@@ -799,6 +832,12 @@ const submitModal = async () => {
     return
   }
 
+  // 平台校验：至少勾选一个平台
+  if (form.enablePlatform.length === 0) {
+    modalError.value = t('components.mcp.form.errors.noPlatformSelected')
+    return
+  }
+
   const existing = servers.value.find((server) => server.name === trimmedName)
   if (!modalState.editingName && existing) {
     modalError.value = t('components.mcp.form.errors.duplicate')
@@ -839,6 +878,18 @@ const submitModal = async () => {
     }
   } else {
     servers.value.push(payload)
+  }
+
+  // 检查占位符并提示
+  const placeholders = formMissingPlaceholders.value
+  if (placeholders.length > 0 && form.enablePlatform.length > 0) {
+    // 显示警告（允许保存，但提示未同步）
+    showToast(
+      t('components.mcp.form.warnings.savedWithPlaceholders', {
+        vars: placeholders.join(', ')
+      }),
+      'warning'
+    )
   }
 
   closeModal()

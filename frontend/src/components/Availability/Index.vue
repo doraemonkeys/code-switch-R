@@ -241,10 +241,10 @@ onUnmounted(() => {
         <button
           @click="refreshAll"
           :disabled="refreshing"
-          class="px-4 py-2 bg-[var(--mac-accent)] text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+          class="px-6 py-3 text-base font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <span v-if="refreshing">{{ t('availability.refreshing') }}</span>
-          <span v-else>{{ t('availability.refreshAll') }}</span>
+          <span v-if="refreshing">🔄 {{ t('availability.refreshing') }}</span>
+          <span v-else>⚡ {{ t('availability.refreshAll') }}</span>
         </button>
       </div>
     </div>
@@ -339,11 +339,12 @@ onUnmounted(() => {
                     {{ t('availability.check') }}
                   </button>
 
-                  <!-- 编辑配置按钮 -->
+                  <!-- 编辑配置按钮（始终显示，未启用时置灰）-->
                   <button
-                    v-if="timeline.availabilityMonitorEnabled"
-                    @click="editConfig(platform, timeline)"
-                    class="px-3 py-1 text-sm bg-[var(--mac-accent)] text-white rounded-lg hover:opacity-90 transition-colors"
+                    @click="timeline.availabilityMonitorEnabled && editConfig(platform, timeline)"
+                    :disabled="!timeline.availabilityMonitorEnabled"
+                    :title="timeline.availabilityMonitorEnabled ? '' : t('availability.enableToMonitor')"
+                    class="px-3 py-1 text-sm rounded-lg transition-colors bg-[var(--mac-accent)] text-white hover:opacity-90 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed dark:disabled:bg-gray-700 dark:disabled:text-gray-400"
                   >
                     {{ t('availability.editConfig') }}
                   </button>
