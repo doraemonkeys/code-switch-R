@@ -59,7 +59,10 @@ const panelRef = ref<HTMLElement | null>(null)
 const closeButtonRef = ref<HTMLButtonElement | null>(null)
 let lastActiveElement: Element | null = null
 
-const emitClose = () => emit('close')
+const emitClose = () => {
+  alert('[DEBUG] InlineModal emitClose called!')
+  emit('close')
+}
 
 const getFocusableElements = (): HTMLElement[] => {
   if (!panelRef.value) return []

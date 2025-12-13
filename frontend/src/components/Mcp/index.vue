@@ -723,16 +723,14 @@ const closeModal = () => {
 
 // 切换 Modal 模式
 const switchModalMode = (mode: ModalMode) => {
-  console.log('[DEBUG] switchModalMode called:', { from: modalMode.value, to: mode })
+  alert(`[DEBUG] switchModalMode: ${modalMode.value} -> ${mode}`)
   modalMode.value = mode
   jsonError.value = ''
   modalError.value = ''
   // 切到 JSON 模式时，确保清除预览结果，显示输入界面
   if (mode === 'json') {
     jsonParseResult.value = null
-    console.log('[DEBUG] JSON mode activated, jsonParseResult cleared')
   }
-  console.log('[DEBUG] switchModalMode done:', { modalMode: modalMode.value, jsonParseResult: jsonParseResult.value })
 }
 
 // 填充示例 JSON
