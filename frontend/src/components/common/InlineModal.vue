@@ -1,10 +1,11 @@
 <template>
   <Transition name="modal-fade">
     <div v-if="open" class="modal-backdrop" role="presentation">
-      <!-- 遮罩层：点击关闭 -->
-      <div class="modal-overlay" @click="emitClose"></div>
-      <!-- 内容容器：统一阻断冒泡 -->
-      <div class="modal-wrapper" @click.stop>
+      <!-- 遮罩层：仅负责视觉，不接收点击（避免 WebView 命中测试/层合成导致误触关闭） -->
+      <div class="modal-overlay-noevent" aria-hidden="true"></div>
+
+      <!-- 点击空白处关闭：只有点到 wrapper 自身时才触发 -->
+      <div class="modal-wrapper" @click="onWrapperClick">
         <Transition name="modal-slide" appear>
           <div
             ref="panelRef"
@@ -60,6 +61,14 @@ const closeButtonRef = ref<HTMLButtonElement | null>(null)
 let lastActiveElement: Element | null = null
 
 const emitClose = () => emit('close')
+
+// 统一阻断冒泡；只有点到 wrapper 空白处才关闭（等价于 @click.self）
+const onWrapperClick = (event: MouseEvent) => {
+  event.stopPropagation()
+  if (event.target === event.currentTarget) {
+    emitClose()
+  }
+}
 
 const getFocusableElements = (): HTMLElement[] => {
   if (!panelRef.value) return []
@@ -138,12 +147,16 @@ watch(
       window.removeEventListener('keydown', onKeyDown, true)
       unlockScroll()
       if (lastActiveElement instanceof HTMLElement) {
-        try { lastActiveElement.focus() } catch { /* ignore */ }
+        try {
+          lastActiveElement.focus()
+        } catch {
+          /* ignore */
+        }
       }
       lastActiveElement = null
     }
   },
-  { immediate: true }
+  { immediate: true },
 )
 
 onBeforeUnmount(() => {

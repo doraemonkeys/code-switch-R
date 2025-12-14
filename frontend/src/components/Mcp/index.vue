@@ -203,11 +203,6 @@
         </button>
       </div>
 
-      <!-- DEBUG: 状态显示 -->
-      <div style="background: #333; padding: 8px; margin-bottom: 8px; font-size: 12px; color: #0f0; font-family: monospace;">
-        [DEBUG] modalMode={{ modalMode }} | jsonParseResult={{ jsonParseResult ? 'has value' : 'null' }} | jsonParsing={{ jsonParsing }}
-      </div>
-
       <div class="modal-scroll">
       <!-- 表单模式 -->
       <form v-if="modalMode === 'form'" class="vendor-form" @submit.prevent="submitModal">
@@ -304,10 +299,6 @@
 
       <!-- JSON 导入模式 -->
       <div v-else-if="modalMode === 'json'" class="json-import-section">
-        <!-- 醒目测试文本 -->
-        <div style="background: red; color: white; padding: 20px; font-size: 24px; font-weight: bold;">
-          JSON 模式已激活！如果你能看到这段红色文字，说明渲染正常。
-        </div>
         <!-- JSON 输入区 -->
         <div v-if="!jsonParseResult" class="json-input-area">
           <!-- 说明 + 示例按钮 -->
