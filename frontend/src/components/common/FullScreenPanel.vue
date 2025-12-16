@@ -50,6 +50,7 @@
 
 <script setup lang="ts">
 import { ref, watch, onBeforeUnmount, nextTick } from 'vue'
+import { showToast } from '../../utils/toast'
 
 const props = withDefaults(
   defineProps<{
@@ -103,6 +104,7 @@ const onKeyDown = (e: KeyboardEvent) => {
 watch(
   () => props.open,
   (isOpen) => {
+    showToast(`[DEBUG] FullScreenPanel watch: open=${isOpen}, title=${props.title}`, 'info')
     if (isOpen) {
       lastActiveElement = document.activeElement
       document.body.style.overflow = 'hidden'
