@@ -1047,13 +1047,18 @@ func (is *ImportService) ParseMCPJSON(jsonStr string) (*MCPParseResult, error) {
 func parseMCPServersMap(serversMap map[string]interface{}) ([]MCPServer, error) {
 	servers := make([]MCPServer, 0, len(serversMap))
 	for name, serverData := range serversMap {
+		// 跳过空 key（防止 {"": {...}} 这种无效配置）
+		trimmedName := strings.TrimSpace(name)
+		if trimmedName == "" {
+			continue
+		}
 		serverMap, ok := serverData.(map[string]interface{})
 		if !ok {
 			continue
 		}
-		server, _, err := parseSingleServer(serverMap, name)
+		server, _, err := parseSingleServer(serverMap, trimmedName)
 		if err != nil {
-			return nil, errors.New("服务器 '" + name + "' 配置无效: " + err.Error())
+			return nil, errors.New("服务器 '" + trimmedName + "' 配置无效: " + err.Error())
 		}
 		servers = append(servers, server)
 	}
@@ -1092,13 +1097,21 @@ func parseMCPServersArray(arr []interface{}) ([]MCPServer, error) {
 
 // parseSingleServer 解析单个服务器配置
 func parseSingleServer(data map[string]interface{}, name string) (MCPServer, bool, error) {
+	// 优先使用参数 name，否则从 data["name"] 读取
+	serverName := strings.TrimSpace(name)
+	if serverName == "" {
+		if n, ok := data["name"].(string); ok {
+			serverName = strings.TrimSpace(n)
+		}
+	}
+
 	server := MCPServer{
-		Name:           strings.TrimSpace(name),
+		Name:           serverName,
 		EnablePlatform: []string{platClaudeCode, platCodex}, // 默认启用两个平台
 	}
 	needName := false
 
-	// 解析 type
+	// 解析 type（后续会规范化）
 	if t, ok := data["type"].(string); ok {
 		server.Type = strings.TrimSpace(t)
 	}
@@ -1148,6 +1161,9 @@ func parseSingleServer(data map[string]interface{}, name string) (MCPServer, boo
 			server.Type = "stdio"
 		}
 	}
+
+	// 规范化类型（防止 "STDIO" vs "stdio" 大小写问题）
+	server.Type = normalizeServerType(server.Type)
 
 	// 验证必需字段
 	if server.Type == "" {

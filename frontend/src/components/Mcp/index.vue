@@ -443,7 +443,7 @@
 
           <!-- 服务器列表预览 -->
           <div class="preview-list">
-            <div v-for="server in (jsonParseResult?.servers ?? [])" :key="server.name" class="preview-item">
+            <div v-for="(server, idx) in (jsonParseResult?.servers ?? [])" :key="idx" class="preview-item">
               <div class="preview-item-header">
                 <span class="preview-item-name">{{ server.name || t('components.mcp.jsonImport.unnamed') }}</span>
                 <span class="preview-item-type">{{ server.type }}</span>
@@ -570,6 +570,9 @@ const modalState = reactive({
   editingName: '',
   form: createEmptyForm(),
 })
+
+// Session ID：防止异步回调竞态条件（快速切换 modal 时旧回调覆盖新状态）
+let modalSessionId = 0
 
 // JSON 导入状态
 type ModalMode = 'form' | 'json'
@@ -748,6 +751,7 @@ const onPlatformToggle = async (server: McpServer, platform: McpPlatform, event:
 }
 
 const openCreateModal = () => {
+  modalSessionId++  // 递增 session ID，使旧异步回调失效
   modalState.open = true
   modalState.editingName = ''
   modalState.form = createEmptyForm()
@@ -765,6 +769,7 @@ const openCreateModal = () => {
 }
 
 const openEditModal = (server: McpServer) => {
+  modalSessionId++  // 递增 session ID，使旧异步回调失效
   modalState.open = true
   modalState.editingName = server.name
   modalError.value = ''
@@ -840,12 +845,19 @@ const handleParseJSON = async () => {
     return
   }
 
+  const capturedSessionId = modalSessionId  // 捕获当前 session ID
   jsonParsing.value = true
   jsonError.value = ''
   jsonParseResult.value = null
 
   try {
     const result = await parseMCPJSON(input)
+
+    // 检查 session ID：如果 modal 已关闭或重新打开，丢弃结果
+    if (capturedSessionId !== modalSessionId) {
+      return
+    }
+
     jsonParseResult.value = result
 
     // 单服务器且需要命名：填充表单并切换到表单模式
@@ -863,10 +875,17 @@ const handleParseJSON = async () => {
 
     // 多服务器：显示预览列表
   } catch (error) {
+    // 检查 session ID：如果 modal 已关闭或重新打开，不显示错误
+    if (capturedSessionId !== modalSessionId) {
+      return
+    }
     console.error('Failed to parse MCP JSON:', error)
     jsonError.value = error instanceof Error ? error.message : t('components.mcp.jsonImport.parseError')
   } finally {
-    jsonParsing.value = false
+    // 仅当 session ID 匹配时才重置 parsing 状态
+    if (capturedSessionId === modalSessionId) {
+      jsonParsing.value = false
+    }
   }
 }
 
@@ -889,17 +908,31 @@ const fillFormFromServer = (server: McpServer) => {
 const handleBatchImport = async (strategy: ConflictStrategy = 'skip') => {
   if (!jsonParseResult.value?.servers.length) return
 
+  const capturedSessionId = modalSessionId  // 捕获当前 session ID
   saveBusy.value = true
   try {
     const count = await importMCPFromJSON(jsonParseResult.value.servers, strategy)
+
+    // 检查 session ID：如果 modal 已关闭或重新打开，不执行后续操作
+    if (capturedSessionId !== modalSessionId) {
+      return
+    }
+
     showToast(t('components.mcp.jsonImport.importSuccess', { count }), 'success')
     closeModal()
     await loadServers()
   } catch (error) {
+    // 检查 session ID：如果 modal 已关闭或重新打开，不显示错误
+    if (capturedSessionId !== modalSessionId) {
+      return
+    }
     console.error('Failed to import MCP servers:', error)
     showToast(t('components.mcp.jsonImport.importError'), 'error')
   } finally {
-    saveBusy.value = false
+    // 仅当 session ID 匹配时才重置 busy 状态
+    if (capturedSessionId === modalSessionId) {
+      saveBusy.value = false
+    }
   }
 }
 
@@ -908,6 +941,7 @@ const resetJsonImport = () => {
   jsonInput.value = ''
   jsonError.value = ''
   jsonParseResult.value = null
+  jsonParsing.value = false  // 确保新会话启动时不会继承旧会话的 parsing 状态
 }
 
 // ========== 表单模式：JSON 配置编辑器（单服务器对象） ==========

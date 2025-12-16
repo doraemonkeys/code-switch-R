@@ -9,6 +9,9 @@
         aria-modal="true"
         :aria-labelledby="titleId"
         tabindex="-1"
+        @pointerdown.capture="markUserPointerInteraction"
+        @pointerup.capture="markUserPointerInteraction"
+        @click.capture="markUserClickInteraction"
         @keydown="onKeyDown"
       >
         <!-- Header -->
@@ -63,6 +66,21 @@ const panelRef = ref<HTMLElement | null>(null)
 const closeButtonRef = ref<HTMLButtonElement | null>(null)
 let lastActiveElement: Element | null = null
 
+// 某些 WebView 在点击/聚焦切换后会派发"幽灵 Esc"键盘事件，导致面板误关闭；
+// 用极短时间窗过滤，避免影响正常的 Esc 关闭体验。
+let lastUserInteractionAt = 0
+const PHANTOM_ESCAPE_SUPPRESS_MS = 100
+
+const markUserPointerInteraction = (event: Event) => {
+  if (!event.isTrusted) return
+  lastUserInteractionAt = performance.now()
+}
+
+const markUserClickInteraction = (event: MouseEvent) => {
+  if (!event.isTrusted) return
+  lastUserInteractionAt = performance.now()
+}
+
 const handleClose = () => {
   emit('close')
 }
@@ -81,6 +99,13 @@ const onKeyDown = (e: KeyboardEvent) => {
 
   // Esc 可能来自下拉框/输入法等内部交互；此类情况优先交给控件自身处理，避免误关闭面板
   if (isEditableTarget(e.target)) return
+
+  // 过滤"紧跟在用户交互之后"的异常 Esc（更像 WebView 误派发，而非用户真实按键）
+  if (performance.now() - lastUserInteractionAt < PHANTOM_ESCAPE_SUPPRESS_MS) {
+    e.preventDefault()
+    e.stopPropagation()
+    return
+  }
 
   // 只在焦点位于面板内部时才响应 Esc，避免 WebView 异常事件误触发关闭
   const panelEl = panelRef.value
