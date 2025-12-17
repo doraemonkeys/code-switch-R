@@ -1,17 +1,11 @@
 <template>
-  <!-- DEBUG: 使用 props.open 替代 open -->
+  <!-- DEBUG: 极简测试，移除 $attrs -->
     <div
       v-if="props.open"
-        v-bind="$attrs"
         ref="panelRef"
-        class="panel-container"
-        style="background: red !important; position: fixed !important; inset: 0 !important; z-index: 99999 !important;"
+        class="panel-container mcp-fullscreen-panel"
+        style="background: green !important; position: fixed !important; inset: 0 !important; z-index: 99999 !important;"
         role="dialog"
-        aria-modal="true"
-        :aria-labelledby="titleId"
-        tabindex="-1"
-        @click="handleBackdropClick"
-        @keydown="onKeyDown"
       >
         <!-- Header: @click.stop 防止点击 header 触发 backdrop 逻辑 -->
         <header class="panel-header" @click.stop>
