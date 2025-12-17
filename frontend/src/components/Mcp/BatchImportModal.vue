@@ -5,14 +5,85 @@
     @close="handleClose"
   >
     <div class="import-container">
-      <p>TEST: 简单 i18n key</p>
+      <!-- Step 1: JSON Input -->
       <div v-if="step === 'input'">
+        <p class="step-desc">{{ t('components.mcp.import.inputDesc') }}</p>
         <BaseTextarea
+          ref="textareaRef"
           v-model="jsonInput"
-          :placeholder="t('components.mcp.import.inputDesc')"
-          rows="10"
+          :placeholder="t('components.mcp.import.placeholder')"
+          rows="12"
+          class="json-input"
         />
-        <BaseButton @click="handleClose">关闭</BaseButton>
+        <p v-if="error" class="alert-error">{{ error }}</p>
+        <div class="step-actions">
+          <BaseButton variant="outline" @click="handleClose">
+            {{ t('components.mcp.form.actions.cancel') }}
+          </BaseButton>
+          <BaseButton :disabled="!jsonInput.trim() || parsing" @click="parseJson">
+            {{ parsing ? t('components.mcp.import.parsing') : t('components.mcp.import.next') }}
+          </BaseButton>
+        </div>
+      </div>
+
+      <!-- Step 2: Review & Select -->
+      <div v-else-if="step === 'review'">
+        <div class="review-header">
+          <h3>{{ t('components.mcp.import.reviewTitle', { count: parsedServers.length }) }}</h3>
+          <label class="select-all-label">
+            <input type="checkbox" :checked="allSelected" @change="toggleAll" />
+            <span>{{ t('components.mcp.import.selectAll') }}</span>
+          </label>
+        </div>
+
+        <div v-if="hasConflicts" class="conflict-notice">
+          <span class="conflict-icon">!</span>
+          <span>{{ t('components.mcp.import.conflictNotice', { count: conflictCount }) }}</span>
+          <select v-model="conflictStrategy" class="strategy-select">
+            <option value="skip">{{ t('components.mcp.import.strategySkip') }}</option>
+            <option value="overwrite">{{ t('components.mcp.import.strategyOverwrite') }}</option>
+          </select>
+        </div>
+
+        <div class="server-list">
+          <div
+            v-for="server in parsedServers"
+            :key="server.data.name"
+            class="server-item"
+            :class="{ 'is-selected': server.selected, 'is-conflict': server.isConflict }"
+            @click="toggleSelection(server)"
+          >
+            <div class="checkbox-wrapper">
+              <input type="checkbox" :checked="server.selected" @click.stop />
+            </div>
+            <div class="server-info">
+              <div class="server-name-row">
+                <span class="server-name">{{ server.data.name }}</span>
+                <span v-if="server.isConflict" class="badge conflict">
+                  {{ t('components.mcp.import.status.conflict') }}
+                </span>
+                <span v-else class="badge new">
+                  {{ t('components.mcp.import.status.new') }}
+                </span>
+              </div>
+              <div class="server-detail">
+                <span class="type-tag">{{ server.data.type }}</span>
+                <span class="detail-text">
+                  {{ server.data.type === 'http' ? server.data.url : server.data.command }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="step-actions">
+          <BaseButton variant="outline" @click="goBack">
+            {{ t('components.mcp.import.back') }}
+          </BaseButton>
+          <BaseButton :disabled="selectedCount === 0 || importing" @click="doImport">
+            {{ importing ? t('components.mcp.import.importing') : t('components.mcp.import.submit', { count: selectedCount }) }}
+          </BaseButton>
+        </div>
       </div>
     </div>
   </FullScreenPanel>

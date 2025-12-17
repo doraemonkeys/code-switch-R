@@ -563,7 +563,7 @@
       "import": {
         "title": "批量导入 MCP 服务器",
         "inputDesc": "粘贴 MCP 配置 JSON，支持 Claude Desktop 格式、数组格式或服务器映射格式。",
-        "placeholder": "{\n  \"mcpServers\": {\n    \"server-name\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@modelcontextprotocol/server-xxx\"]\n    }\n  }\n}",
+        "placeholder": "粘贴 Claude Desktop 或标准 MCP 配置 JSON...",
         "next": "下一步",
         "parsing": "解析中...",
         "back": "上一步",
