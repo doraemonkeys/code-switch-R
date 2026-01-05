@@ -52,6 +52,37 @@ type ProviderRelayService struct {
 // errClientAbort 表示客户端中断连接，不应计入 provider 失败次数
 var errClientAbort = errors.New("client aborted, skip failure count")
 
+// AuthMethod 表示原始请求使用的认证方式
+type AuthMethod int
+
+const (
+	AuthMethodBearer  AuthMethod = iota // Authorization: Bearer xxx
+	AuthMethodXAPIKey                   // x-api-key: xxx
+)
+
+// detectAuthMethod 检测原始请求使用的认证方式
+// 使用 http.Header.Get 进行大小写无关的匹配
+func detectAuthMethod(header http.Header) AuthMethod {
+	// 优先检查 x-api-key（使用 http.Header.Get 自动处理大小写）
+	if header.Get("X-Api-Key") != "" {
+		return AuthMethodXAPIKey
+	}
+	// 默认使用 Authorization Bearer
+	return AuthMethodBearer
+}
+
+// httpHeaderToMap 将 http.Header 转换为 map[string]string
+// 用于与需要 map[string]string 的函数（如 SanitizeHeaders）兼容
+func httpHeaderToMap(h http.Header) map[string]string {
+	result := make(map[string]string, len(h))
+	for k, v := range h {
+		if len(v) > 0 {
+			result[k] = v[len(v)-1] // 取最后一个值
+		}
+	}
+	return result
+}
+
 // hopByHopHeaders 是不应该被代理转发的逐跳头（hop-by-hop headers）
 // 参考 RFC 2616 Section 13.5.1 和 RFC 7230 Section 6.1
 var hopByHopHeaders = map[string]bool{
@@ -662,6 +693,8 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 		query := flattenQuery(c.Request.URL.Query())
 		clientHeaders := cloneHeaders(c.Request.Header)
+		// 检测原始请求的认证方式（Authorization 还是 x-api-key）
+		authMethod := detectAuthMethod(c.Request.Header)
 
 		// 获取拉黑功能开关状态
 		blacklistEnabled := prs.blacklistService.ShouldUseFixedMode()
@@ -725,7 +758,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 							provider.Name, level, retryCount+1, maxRetryPerProvider, effectiveModel)
 
 						startTime := time.Now()
-						ok, err := prs.forwardRequest(c, kind, provider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel)
+						ok, err := prs.forwardRequest(c, kind, provider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel, authMethod)
 						duration := time.Since(startTime)
 
 						if ok {
@@ -809,7 +842,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		if cachedProviderName != "" {
 			affinityResult := prs.tryAffinityProvider(
 				c, kind, affinityKey, cachedProviderName, active,
-				endpoint, query, clientHeaders, bodyBytes, isStream, requestedModel,
+				endpoint, query, clientHeaders, bodyBytes, isStream, requestedModel, authMethod,
 			)
 			if affinityResult.Handled {
 				return // 成功或客户端中断，不再继续
@@ -864,7 +897,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 				// 获取有效的端点（用户配置优先）
 				effectiveEndpoint := provider.GetEffectiveEndpoint(endpoint)
 				startTime := time.Now()
-				ok, err := prs.forwardRequest(c, kind, provider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel)
+				ok, err := prs.forwardRequest(c, kind, provider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel, authMethod)
 				duration := time.Since(startTime)
 
 				if ok {
@@ -957,10 +990,11 @@ func (prs *ProviderRelayService) forwardRequest(
 	provider Provider,
 	endpoint string,
 	query map[string]string,
-	clientHeaders map[string]string,
+	clientHeaders http.Header,
 	bodyBytes []byte,
 	isStream bool,
 	model string,
+	authMethod AuthMethod,
 ) (bool, error) {
 	targetURL := joinURL(provider.APIURL, endpoint)
 
@@ -977,28 +1011,29 @@ func (prs *ProviderRelayService) forwardRequest(
 		}
 	}
 
-	headers := cloneMap(clientHeaders)
-
-	// 根据认证方式设置请求头（默认 Bearer，与 v2.2.x 保持一致）
-	authType := strings.ToLower(strings.TrimSpace(provider.ConnectivityAuthType))
-	switch authType {
-	case "x-api-key":
-		// 仅当用户显式选择 x-api-key 时使用（Anthropic 官方 API）
-		headers["x-api-key"] = provider.APIKey
-	case "", "bearer":
-		// 默认使用 Bearer token（兼容所有第三方中转）
-		headers["Authorization"] = fmt.Sprintf("Bearer %s", provider.APIKey)
-	default:
-		// 自定义 Header 名
-		headerName := strings.TrimSpace(provider.ConnectivityAuthType)
-		if headerName == "" || strings.EqualFold(headerName, "custom") {
-			headerName = "Authorization"
-		}
-		headers[headerName] = provider.APIKey
+	// 使用标准库 http.Header 处理请求头，避免大小写问题
+	headers := make(http.Header)
+	for k, v := range clientHeaders {
+		headers[k] = v
 	}
 
-	if _, ok := headers["Accept"]; !ok {
-		headers["Accept"] = "application/json"
+	// 根据原始请求的认证方式设置转发请求头
+	// 原始请求用 Authorization 就用 Authorization，原始请求用 x-api-key 就用 x-api-key
+	switch authMethod {
+	case AuthMethodXAPIKey:
+		// 原始请求使用 x-api-key，转发也使用 x-api-key
+		headers.Set("X-Api-Key", provider.APIKey)
+		// 删除可能存在的 Authorization 头
+		headers.Del("Authorization")
+	default:
+		// 原始请求使用 Authorization Bearer，转发也使用 Authorization
+		headers.Set("Authorization", fmt.Sprintf("Bearer %s", provider.APIKey))
+		// 删除可能存在的 x-api-key 头
+		headers.Del("X-Api-Key")
+	}
+
+	if headers.Get("Accept") == "" {
+		headers.Set("Accept", "application/json")
 	}
 
 	requestLog := &RequestLog{
@@ -1091,7 +1126,7 @@ func (prs *ProviderRelayService) forwardRequest(
 				RequestURL:      targetURL,
 				RequestBody:     reqBody,
 				ResponseBody:    respBody,
-				Headers:         SanitizeHeaders(headers),
+				Headers:         SanitizeHeaders(httpHeaderToMap(headers)),
 				ResponseHeaders: respHeaders,
 				HttpCode:        requestLog.HttpCode,
 				Timestamp:       completedAt,
@@ -1125,8 +1160,11 @@ func (prs *ProviderRelayService) forwardRequest(
 	httpReq.GetBody = func() (io.ReadCloser, error) {
 		return io.NopCloser(bytes.NewReader(bodyBytes)), nil
 	}
-	for k, v := range headers {
-		httpReq.Header.Set(k, v)
+	// 复制 headers 到请求（headers 已经是 http.Header 类型）
+	for k, values := range headers {
+		for _, v := range values {
+			httpReq.Header.Add(k, v)
+		}
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
@@ -1296,9 +1334,10 @@ func safeCallHook(hook func([]byte) []byte, data []byte) (result []byte) {
 // extractUserID 从请求头中提取 user_id（用于缓存亲和性）
 // 通过对 Authorization header 中的 API Key 进行 hash 处理来生成唯一标识
 func (prs *ProviderRelayService) extractUserID(c *gin.Context) string {
-	authHeader := c.GetHeader("Authorization")
+	// 使用 http.Header.Get 进行大小写无关的匹配
+	authHeader := c.Request.Header.Get("Authorization")
 	if authHeader == "" {
-		authHeader = c.GetHeader("x-api-key")
+		authHeader = c.Request.Header.Get("X-Api-Key")
 	}
 	if authHeader == "" {
 		return "anonymous"
@@ -1328,10 +1367,11 @@ func (prs *ProviderRelayService) tryAffinityProvider(
 	activeProviders []Provider,
 	endpoint string,
 	query map[string]string,
-	clientHeaders map[string]string,
+	clientHeaders http.Header,
 	bodyBytes []byte,
 	isStream bool,
 	requestedModel string,
+	authMethod AuthMethod,
 ) AffinityTryResult {
 	result := AffinityTryResult{}
 
@@ -1371,7 +1411,7 @@ func (prs *ProviderRelayService) tryAffinityProvider(
 
 	effectiveEndpoint := cachedProvider.GetEffectiveEndpoint(endpoint)
 	startTime := time.Now()
-	ok, err := prs.forwardRequest(c, kind, *cachedProvider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel)
+	ok, err := prs.forwardRequest(c, kind, *cachedProvider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel, authMethod)
 	result.Duration = time.Since(startTime)
 
 	if ok {
@@ -1490,12 +1530,27 @@ func (prs *ProviderRelayService) tryGeminiAffinityProvider(
 	return result
 }
 
-func cloneHeaders(header http.Header) map[string]string {
-	cloned := make(map[string]string, len(header))
+// cloneHeaders 克隆请求头，返回 http.Header 类型
+// 过滤掉认证相关的头（Authorization, x-api-key），因为转发时会根据原始请求的认证方式重新设置
+// 同时过滤掉 hop-by-hop headers
+func cloneHeaders(header http.Header) http.Header {
+	cloned := make(http.Header)
 	for key, values := range header {
-		if len(values) > 0 {
-			cloned[key] = values[len(values)-1]
+		// 使用 http.CanonicalHeaderKey 进行标准化比较
+		canonicalKey := http.CanonicalHeaderKey(key)
+
+		// 跳过认证相关的头（会在转发时根据 authMethod 重新设置）
+		if canonicalKey == "Authorization" || canonicalKey == "X-Api-Key" {
+			continue
 		}
+
+		// 跳过 hop-by-hop headers
+		if hopByHopHeaders[canonicalKey] {
+			continue
+		}
+
+		// 复制所有值
+		cloned[canonicalKey] = append([]string(nil), values...)
 	}
 	return cloned
 }
@@ -2385,6 +2440,8 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 
 		query := flattenQuery(c.Request.URL.Query())
 		clientHeaders := cloneHeaders(c.Request.Header)
+		// 检测原始请求的认证方式（Authorization 还是 x-api-key）
+		authMethod := detectAuthMethod(c.Request.Header)
 
 		// 获取拉黑功能开关状态
 		blacklistEnabled := prs.blacklistService.ShouldUseFixedMode()
@@ -2446,7 +2503,7 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 							provider.Name, level, retryCount+1, maxRetryPerProvider, effectiveModel)
 
 						startTime := time.Now()
-						ok, err := prs.forwardRequest(c, kind, provider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel)
+						ok, err := prs.forwardRequest(c, kind, provider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel, authMethod)
 						duration := time.Since(startTime)
 
 						if ok {
@@ -2536,7 +2593,7 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 		if cachedProviderName != "" {
 			affinityResult := prs.tryAffinityProvider(
 				c, kind, affinityKey, cachedProviderName, active,
-				endpoint, query, clientHeaders, bodyBytes, isStream, requestedModel,
+				endpoint, query, clientHeaders, bodyBytes, isStream, requestedModel, authMethod,
 			)
 			if affinityResult.Handled {
 				return // 成功或客户端中断，不再继续
@@ -2585,7 +2642,7 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 				effectiveEndpoint := provider.GetEffectiveEndpoint(endpoint)
 
 				startTime := time.Now()
-				ok, err := prs.forwardRequest(c, kind, provider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel)
+				ok, err := prs.forwardRequest(c, kind, provider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel, authMethod)
 				duration := time.Since(startTime)
 
 				if ok {
@@ -2744,30 +2801,27 @@ func (prs *ProviderRelayService) forwardModelsRequest(
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// 复制客户端请求头
-	for key, values := range c.Request.Header {
+	// 复制客户端请求头（使用标准库处理，过滤认证头）
+	clientHeaders := cloneHeaders(c.Request.Header)
+	for key, values := range clientHeaders {
 		for _, value := range values {
 			req.Header.Add(key, value)
 		}
 	}
 
-	// 根据认证方式设置请求头（默认 Bearer，与 v2.2.x 保持一致）
-	authType := strings.ToLower(strings.TrimSpace(selectedProvider.ConnectivityAuthType))
-	switch authType {
-	case "x-api-key":
-		req.Header.Set("x-api-key", selectedProvider.APIKey)
-		// 仅在原始请求未携带 anthropic-version 时设置默认值
-		if req.Header.Get("anthropic-version") == "" && req.Header.Get("Anthropic-Version") == "" {
-			req.Header.Set("Anthropic-Version", "2023-06-01")
-		}
-	case "", "bearer":
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", selectedProvider.APIKey))
+	// 检测原始请求的认证方式，转发时使用相同方式
+	authMethod := detectAuthMethod(c.Request.Header)
+	switch authMethod {
+	case AuthMethodXAPIKey:
+		// 原始请求使用 x-api-key，转发也使用 x-api-key
+		req.Header.Set("X-Api-Key", selectedProvider.APIKey)
+		// 删除可能存在的 Authorization 头
+		req.Header.Del("Authorization")
 	default:
-		headerName := strings.TrimSpace(selectedProvider.ConnectivityAuthType)
-		if headerName == "" || strings.EqualFold(headerName, "custom") {
-			headerName = "Authorization"
-		}
-		req.Header.Set(headerName, selectedProvider.APIKey)
+		// 原始请求使用 Authorization Bearer，转发也使用 Authorization
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", selectedProvider.APIKey))
+		// 删除可能存在的 x-api-key 头
+		req.Header.Del("X-Api-Key")
 	}
 
 	// 设置默认 Accept 头

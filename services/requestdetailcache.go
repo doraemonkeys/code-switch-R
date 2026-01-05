@@ -218,6 +218,7 @@ func TruncateBody(body string, maxSize int) (string, bool) {
 // SanitizeHeaders 脱敏请求头
 func SanitizeHeaders(headers map[string]string) map[string]string {
 	sanitized := make(map[string]string, len(headers))
+	// 使用小写形式进行比较，兼容各种大小写形式的 header key
 	sensitiveKeys := map[string]bool{
 		"authorization":  true,
 		"x-api-key":      true,
