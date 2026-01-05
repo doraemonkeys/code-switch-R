@@ -33,7 +33,8 @@ type ProviderRelayService struct {
 	geminiService       *GeminiService
 	blacklistService    *BlacklistService
 	notificationService *NotificationService
-	appSettings         *AppSettingsService // 应用设置服务（用于获取轮询开关状态）
+	appSettings         *AppSettingsService   // 应用设置服务（用于获取轮询开关状态）
+	affinityManager     *CacheAffinityManager // 5分钟同源缓存亲和性管理器
 	server              *http.Server
 	addr                string
 	lastUsed            map[string]*LastUsedProvider // 各平台最后使用的供应商
@@ -53,12 +54,16 @@ func NewProviderRelayService(providerService *ProviderService, geminiService *Ge
 	// 【修复】数据库初始化已移至 main.go 的 InitDatabase()
 	// 此处不再调用 xdb.Inits()、ensureRequestLogTable()、ensureBlacklistTables()
 
+	// 初始化 5 分钟同源缓存亲和性管理器
+	affinityManager := NewCacheAffinityManager(5 * time.Minute)
+
 	return &ProviderRelayService{
 		providerService:     providerService,
 		geminiService:       geminiService,
 		blacklistService:    blacklistService,
 		notificationService: notificationService,
 		appSettings:         appSettings,
+		affinityManager:     affinityManager,
 		addr:                addr,
 		lastUsed: map[string]*LastUsedProvider{
 			"claude": nil,
@@ -235,6 +240,11 @@ func (prs *ProviderRelayService) Start() error {
 		fmt.Println("========================================")
 	}
 
+	// 启动缓存亲和性管理器的后台清理任务
+	if prs.affinityManager != nil {
+		prs.affinityManager.StartCleanupTask()
+	}
+
 	router := gin.Default()
 	prs.registerRoutes(router)
 
@@ -304,6 +314,11 @@ func (prs *ProviderRelayService) validateConfig() []string {
 }
 
 func (prs *ProviderRelayService) Stop() error {
+	// 停止缓存亲和性管理器的后台清理任务
+	if prs.affinityManager != nil {
+		prs.affinityManager.StopCleanupTask()
+	}
+
 	if prs.server == nil {
 		return nil
 	}
@@ -331,7 +346,7 @@ func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 	// 自定义 CLI 工具端点（路由格式: /custom/:toolId/v1/messages）
 	// toolId 用于区分不同的 CLI 工具，对应 provider kind 为 "custom:{toolId}"
 	router.POST("/custom/:toolId/v1/messages", prs.customCliProxyHandler())
-	
+
 	// 自定义 CLI 工具的 /v1/models 端点
 	router.GET("/custom/:toolId/v1/models", prs.customModelsHandler())
 }
@@ -356,6 +371,10 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		if requestedModel == "" {
 			fmt.Printf("[WARN] 请求未指定模型名，无法执行模型智能降级\n")
 		}
+
+		// 【5分钟同源缓存】提取 user_id 用于缓存亲和性
+		userID := prs.extractUserID(c)
+		affinityKey := GenerateAffinityKey(userID, kind, requestedModel)
 
 		providers, err := prs.providerService.LoadProviders(kind)
 		if err != nil {
@@ -411,6 +430,12 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 			fmt.Printf("%s ", p.Name)
 		}
 		fmt.Println()
+
+		// 【5分钟同源缓存】检查是否有缓存的 provider
+		cachedProviderName := ""
+		if prs.affinityManager != nil {
+			cachedProviderName = prs.affinityManager.Get(affinityKey)
+		}
 
 		// 按 Level 分组
 		levelGroups := make(map[int][]Provider)
@@ -576,6 +601,23 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		var lastDuration time.Duration
 		totalAttempts := 0
 
+		// 【5分钟同源缓存】如果有缓存的 provider，优先尝试
+		if cachedProviderName != "" {
+			affinityResult := prs.tryAffinityProvider(
+				c, kind, affinityKey, cachedProviderName, active,
+				endpoint, query, clientHeaders, bodyBytes, isStream, requestedModel,
+			)
+			if affinityResult.Handled {
+				return // 成功或客户端中断，不再继续
+			}
+			if affinityResult.UsedProvider != "" {
+				totalAttempts++
+				lastError = affinityResult.LastError
+				lastProvider = affinityResult.UsedProvider
+				lastDuration = affinityResult.Duration
+			}
+		}
+
 		for _, level := range levels {
 			providersInLevel := levelGroups[level]
 
@@ -587,6 +629,12 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 			fmt.Printf("[INFO] === 尝试 Level %d（%d 个 provider）===\n", level, len(providersInLevel))
 
 			for i, provider := range providersInLevel {
+				// 【5分钟同源缓存】跳过已经尝试过的缓存 provider
+				if provider.Name == cachedProviderName {
+					fmt.Printf("[INFO]   跳过已尝试的缓存 provider: %s\n", provider.Name)
+					continue
+				}
+
 				totalAttempts++
 
 				// 获取实际应该使用的模型名
@@ -617,6 +665,11 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 				if ok {
 					fmt.Printf("[INFO]   ✓ Level %d 成功: %s | 耗时: %.2fs\n", level, provider.Name, duration.Seconds())
+
+					// 【5分钟同源缓存】设置缓存亲和性
+					if prs.affinityManager != nil {
+						prs.affinityManager.Set(affinityKey, provider.Name)
+					}
 
 					// 成功：清零连续失败计数
 					if err := prs.blacklistService.RecordSuccess(kind, provider.Name); err != nil {
@@ -686,9 +739,9 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 			totalAttempts, lastProvider, errorMsg)
 
 		c.JSON(http.StatusBadGateway, gin.H{
-			"error":         fmt.Sprintf("所有 %d 个 provider 均失败，最后错误: %s", totalAttempts, errorMsg),
-			"last_provider": lastProvider,
-			"last_duration": fmt.Sprintf("%.2fs", lastDuration.Seconds()),
+			"error":          fmt.Sprintf("所有 %d 个 provider 均失败，最后错误: %s", totalAttempts, errorMsg),
+			"last_provider":  lastProvider,
+			"last_duration":  fmt.Sprintf("%.2fs", lastDuration.Seconds()),
 			"total_attempts": totalAttempts,
 		})
 	}
@@ -836,6 +889,203 @@ func (prs *ProviderRelayService) forwardRequest(
 	}
 
 	return false, fmt.Errorf("upstream status %d", status)
+}
+
+// extractUserID 从请求头中提取 user_id（用于缓存亲和性）
+// 通过对 Authorization header 中的 API Key 进行 hash 处理来生成唯一标识
+func (prs *ProviderRelayService) extractUserID(c *gin.Context) string {
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		authHeader = c.GetHeader("x-api-key")
+	}
+	if authHeader == "" {
+		return "anonymous"
+	}
+	// 移除 "Bearer " 前缀
+	apiKey := strings.TrimPrefix(authHeader, "Bearer ")
+	apiKey = strings.TrimSpace(apiKey)
+	return HashAPIKey(apiKey)
+}
+
+// AffinityTryResult 缓存亲和性尝试结果
+type AffinityTryResult struct {
+	Handled      bool          // 是否已处理完成（成功或客户端中断）
+	UsedProvider string        // 使用的 provider 名称
+	LastError    error         // 最后的错误
+	Duration     time.Duration // 耗时
+}
+
+// tryAffinityProvider 尝试使用缓存的 provider
+// 封装了查找、尝试、成功刷新缓存、失败清除缓存的完整逻辑
+// 返回 AffinityTryResult，调用方根据 Handled 判断是否需要继续降级
+func (prs *ProviderRelayService) tryAffinityProvider(
+	c *gin.Context,
+	kind string,
+	affinityKey string,
+	cachedProviderName string,
+	activeProviders []Provider,
+	endpoint string,
+	query map[string]string,
+	clientHeaders map[string]string,
+	bodyBytes []byte,
+	isStream bool,
+	requestedModel string,
+) AffinityTryResult {
+	result := AffinityTryResult{}
+
+	if cachedProviderName == "" {
+		return result
+	}
+
+	fmt.Printf("[INFO] 🎯 发现缓存的 provider: %s，优先尝试\n", cachedProviderName)
+
+	// 查找缓存的 provider
+	var cachedProvider *Provider
+	for i := range activeProviders {
+		if activeProviders[i].Name == cachedProviderName {
+			cachedProvider = &activeProviders[i]
+			break
+		}
+	}
+
+	if cachedProvider == nil {
+		fmt.Printf("[INFO] 缓存的 provider %s 不在可用列表中，跳过\n", cachedProviderName)
+		return result
+	}
+
+	result.UsedProvider = cachedProvider.Name
+
+	// 准备请求
+	effectiveModel := cachedProvider.GetEffectiveModel(requestedModel)
+	currentBodyBytes := bodyBytes
+
+	if effectiveModel != requestedModel && requestedModel != "" {
+		fmt.Printf("[INFO] Provider %s 映射模型: %s -> %s\n", cachedProvider.Name, requestedModel, effectiveModel)
+		modifiedBody, modErr := ReplaceModelInRequestBody(bodyBytes, effectiveModel)
+		if modErr == nil {
+			currentBodyBytes = modifiedBody
+		}
+	}
+
+	effectiveEndpoint := cachedProvider.GetEffectiveEndpoint(endpoint)
+	startTime := time.Now()
+	ok, err := prs.forwardRequest(c, kind, *cachedProvider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel)
+	result.Duration = time.Since(startTime)
+
+	if ok {
+		fmt.Printf("[INFO] ✓ 缓存命中成功: %s | 耗时: %.2fs\n", cachedProvider.Name, result.Duration.Seconds())
+
+		// 刷新缓存（延长 TTL）
+		if prs.affinityManager != nil {
+			prs.affinityManager.Set(affinityKey, cachedProvider.Name)
+		}
+
+		if recErr := prs.blacklistService.RecordSuccess(kind, cachedProvider.Name); recErr != nil {
+			fmt.Printf("[WARN] 清零失败计数失败: %v\n", recErr)
+		}
+		prs.setLastUsedProvider(kind, cachedProvider.Name)
+		result.Handled = true
+		return result
+	}
+
+	// 缓存的 provider 失败，清除缓存
+	fmt.Printf("[WARN] ✗ 缓存的 provider 失败: %s | 错误: %v | 耗时: %.2fs\n",
+		cachedProvider.Name, err, result.Duration.Seconds())
+	if prs.affinityManager != nil {
+		prs.affinityManager.Invalidate(affinityKey)
+	}
+
+	result.LastError = err
+
+	// 客户端中断不计入失败次数
+	if errors.Is(err, errClientAbort) {
+		result.Handled = true // 客户端中断，不再继续降级
+		return result
+	}
+
+	if recErr := prs.blacklistService.RecordFailure(kind, cachedProvider.Name); recErr != nil {
+		fmt.Printf("[ERROR] 记录失败到黑名单失败: %v\n", recErr)
+	}
+
+	return result
+}
+
+// GeminiAffinityTryResult Gemini 缓存亲和性尝试结果
+type GeminiAffinityTryResult struct {
+	Handled         bool   // 是否已处理完成（成功或响应已写入）
+	UsedProvider    string // 使用的 provider 名称
+	LastError       string // 最后的错误信息
+	ResponseWritten bool   // 响应是否已部分写入客户端
+}
+
+// tryGeminiAffinityProvider 尝试使用缓存的 Gemini provider
+// 封装了查找、尝试、成功刷新缓存、失败清除缓存的完整逻辑
+func (prs *ProviderRelayService) tryGeminiAffinityProvider(
+	c *gin.Context,
+	affinityKey string,
+	cachedProviderName string,
+	activeProviders []GeminiProvider,
+	endpoint string,
+	bodyBytes []byte,
+	isStream bool,
+	requestLog *ReqeustLog,
+	startTime time.Time,
+) GeminiAffinityTryResult {
+	result := GeminiAffinityTryResult{}
+
+	if cachedProviderName == "" {
+		return result
+	}
+
+	fmt.Printf("[Gemini] 🎯 发现缓存的 provider: %s，优先尝试\n", cachedProviderName)
+
+	// 查找缓存的 provider
+	var cachedProvider *GeminiProvider
+	for i := range activeProviders {
+		if activeProviders[i].Name == cachedProviderName {
+			cachedProvider = &activeProviders[i]
+			break
+		}
+	}
+
+	if cachedProvider == nil {
+		fmt.Printf("[Gemini] 缓存的 provider %s 不在可用列表中，跳过\n", cachedProviderName)
+		return result
+	}
+
+	result.UsedProvider = cachedProvider.Name
+	requestLog.Provider = cachedProvider.Name
+	requestLog.Model = cachedProvider.Model
+
+	ok, errMsg, responseWritten := prs.forwardGeminiRequest(c, cachedProvider, endpoint, bodyBytes, isStream, requestLog)
+	result.ResponseWritten = responseWritten
+
+	if ok {
+		// 刷新缓存（延长 TTL）
+		if prs.affinityManager != nil {
+			prs.affinityManager.Set(affinityKey, cachedProvider.Name)
+		}
+		_ = prs.blacklistService.RecordSuccess("gemini", cachedProvider.Name)
+		prs.setLastUsedProvider("gemini", cachedProvider.Name)
+		fmt.Printf("[Gemini] ✓ 缓存命中成功 | Provider: %s | 总耗时: %.2fs\n", cachedProvider.Name, time.Since(startTime).Seconds())
+		result.Handled = true
+		return result
+	}
+
+	// 缓存的 provider 失败，清除缓存
+	fmt.Printf("[Gemini] ⚠️ 缓存的 provider 失败: %s | 错误: %s\n", cachedProvider.Name, errMsg)
+	if prs.affinityManager != nil {
+		prs.affinityManager.Invalidate(affinityKey)
+	}
+	_ = prs.blacklistService.RecordFailure("gemini", cachedProvider.Name)
+	result.LastError = errMsg
+
+	if responseWritten {
+		fmt.Printf("[Gemini] ⚠️ 响应已部分写入，无法降级: %s\n", cachedProvider.Name)
+		result.Handled = true
+	}
+
+	return result
 }
 
 func cloneHeaders(header http.Header) map[string]string {
@@ -1051,7 +1301,7 @@ func mergeGeminiUsageMetadata(usage gjson.Result, reqLog *ReqeustLog) {
 // 【修复】维护跨 chunk 缓冲，确保完整 SSE 事件解析
 // Gemini SSE 格式: "data: {json}\n\n" 或 "data: [DONE]\n\n"
 func streamGeminiResponseWithHook(body io.Reader, writer io.Writer, requestLog *ReqeustLog) error {
-	buf := make([]byte, 8192) // 增大缓冲区减少系统调用
+	buf := make([]byte, 8192)   // 增大缓冲区减少系统调用
 	var lineBuf strings.Builder // 跨 chunk 行缓冲
 
 	for {
@@ -1187,6 +1437,11 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 
 		// 判断是否为流式请求
 		isStream := strings.Contains(endpoint, ":streamGenerateContent") || strings.Contains(query, "alt=sse")
+
+		// 【5分钟同源缓存】提取 user_id 和模型名
+		userID := prs.extractUserID(c)
+		geminiModel := extractGeminiModelFromEndpoint(endpoint)
+		affinityKey := GenerateAffinityKey(userID, "gemini", geminiModel)
 
 		// 加载 Gemini providers
 		providers := prs.geminiService.GetProviders()
@@ -1376,6 +1631,27 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 		}
 
 		var lastError string
+
+		// 【5分钟同源缓存】检查是否有缓存的 provider
+		cachedProviderName := ""
+		if prs.affinityManager != nil {
+			cachedProviderName = prs.affinityManager.Get(affinityKey)
+		}
+
+		// 【5分钟同源缓存】如果有缓存的 provider，优先尝试
+		if cachedProviderName != "" {
+			affinityResult := prs.tryGeminiAffinityProvider(
+				c, affinityKey, cachedProviderName, activeProviders,
+				endpoint, bodyBytes, isStream, requestLog, start,
+			)
+			if affinityResult.Handled {
+				return // 成功或响应已写入，不再继续
+			}
+			if affinityResult.UsedProvider != "" {
+				lastError = affinityResult.LastError
+			}
+		}
+
 		for _, level := range sortedLevels {
 			providersInLevel := levelGroups[level]
 
@@ -1387,6 +1663,12 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 			fmt.Printf("[Gemini] === 尝试 Level %d（%d 个 provider）===\n", level, len(providersInLevel))
 
 			for idx, provider := range providersInLevel {
+				// 【5分钟同源缓存】跳过已经尝试过的缓存 provider
+				if provider.Name == cachedProviderName {
+					fmt.Printf("[Gemini]   跳过已尝试的缓存 provider: %s\n", provider.Name)
+					continue
+				}
+
 				fmt.Printf("[Gemini]   [%d/%d] Provider: %s\n", idx+1, len(providersInLevel), provider.Name)
 
 				// 预填日志，失败也能落库
@@ -1395,6 +1677,10 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 
 				ok, errMsg, responseWritten := prs.forwardGeminiRequest(c, &provider, endpoint, bodyBytes, isStream, requestLog)
 				if ok {
+					// 【5分钟同源缓存】设置缓存亲和性
+					if prs.affinityManager != nil {
+						prs.affinityManager.Set(affinityKey, provider.Name)
+					}
 					_ = prs.blacklistService.RecordSuccess("gemini", provider.Name)
 					// 记录最后使用的供应商
 					prs.setLastUsedProvider("gemini", provider.Name)
@@ -1612,6 +1898,10 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 			fmt.Printf("[CustomCLI][WARN] 请求未指定模型名，无法执行模型智能降级\n")
 		}
 
+		// 【5分钟同源缓存】提取 user_id 用于缓存亲和性
+		userID := prs.extractUserID(c)
+		affinityKey := GenerateAffinityKey(userID, kind, requestedModel)
+
 		// 加载该 CLI 工具的 providers
 		providers, err := prs.providerService.LoadProviders(kind)
 		if err != nil {
@@ -1827,6 +2117,29 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 		var lastDuration time.Duration
 		totalAttempts := 0
 
+		// 【5分钟同源缓存】检查是否有缓存的 provider
+		cachedProviderName := ""
+		if prs.affinityManager != nil {
+			cachedProviderName = prs.affinityManager.Get(affinityKey)
+		}
+
+		// 【5分钟同源缓存】如果有缓存的 provider，优先尝试
+		if cachedProviderName != "" {
+			affinityResult := prs.tryAffinityProvider(
+				c, kind, affinityKey, cachedProviderName, active,
+				endpoint, query, clientHeaders, bodyBytes, isStream, requestedModel,
+			)
+			if affinityResult.Handled {
+				return // 成功或客户端中断，不再继续
+			}
+			if affinityResult.UsedProvider != "" {
+				totalAttempts++
+				lastError = affinityResult.LastError
+				lastProvider = affinityResult.UsedProvider
+				lastDuration = affinityResult.Duration
+			}
+		}
+
 		for _, level := range levels {
 			providersInLevel := levelGroups[level]
 
@@ -1838,6 +2151,12 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 			fmt.Printf("[CustomCLI][INFO] === 尝试 Level %d（%d 个 provider）===\n", level, len(providersInLevel))
 
 			for i, provider := range providersInLevel {
+				// 【5分钟同源缓存】跳过已经尝试过的缓存 provider
+				if provider.Name == cachedProviderName {
+					fmt.Printf("[CustomCLI][INFO]   跳过已尝试的缓存 provider: %s\n", provider.Name)
+					continue
+				}
+
 				totalAttempts++
 
 				effectiveModel := provider.GetEffectiveModel(requestedModel)
@@ -1862,6 +2181,12 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 
 				if ok {
 					fmt.Printf("[CustomCLI][INFO]   ✓ Level %d 成功: %s | 耗时: %.2fs\n", level, provider.Name, duration.Seconds())
+
+					// 【5分钟同源缓存】设置缓存亲和性
+					if prs.affinityManager != nil {
+						prs.affinityManager.Set(affinityKey, provider.Name)
+					}
+
 					if err := prs.blacklistService.RecordSuccess(kind, provider.Name); err != nil {
 						fmt.Printf("[CustomCLI][WARN] 清零失败计数失败: %v\n", err)
 					}
