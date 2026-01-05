@@ -588,6 +588,38 @@ export class CLITemplate {
     }
 }
 
+/**
+ * Stats 返回缓存统计信息
+ */
+export class CacheStats {
+    "mode": RequestDetailMode;
+    "capacity": number;
+    "count": number;
+
+    /** Creates a new CacheStats instance. */
+    constructor($$source: Partial<CacheStats> = {}) {
+        if (!("mode" in $$source)) {
+            this["mode"] = RequestDetailMode.$zero;
+        }
+        if (!("capacity" in $$source)) {
+            this["capacity"] = 0;
+        }
+        if (!("count" in $$source)) {
+            this["count"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new CacheStats instance from a string or object.
+     */
+    static createFrom($$source: any = {}): CacheStats {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new CacheStats($$parsedSource as Partial<CacheStats>);
+    }
+}
+
 export class ClaudeProxyStatus {
     "enabled": boolean;
     "base_url": string;
@@ -2256,6 +2288,178 @@ export class ProxyInjection {
     }
 }
 
+/**
+ * RequestDetail 请求详情（内存缓存，不持久化）
+ */
+export class RequestDetail {
+    /**
+     * 唯一序号（对应 request_log.id）
+     */
+    "sequence_id": number;
+
+    /**
+     * 平台：claude/codex/gemini
+     */
+    "platform": string;
+
+    /**
+     * 供应商名称
+     */
+    "provider": string;
+
+    /**
+     * 模型名
+     */
+    "model": string;
+
+    /**
+     * 目标 URL
+     */
+    "request_url": string;
+
+    /**
+     * 请求体（可能截断）
+     */
+    "request_body": string;
+
+    /**
+     * 响应体（可能截断/聚合）
+     */
+    "response_body": string;
+
+    /**
+     * 请求头（已脱敏）
+     */
+    "headers": { [_: string]: string };
+
+    /**
+     * 响应头
+     */
+    "response_headers": { [_: string]: string };
+
+    /**
+     * HTTP 状态码
+     */
+    "http_code": number;
+
+    /**
+     * 请求时间
+     */
+    "timestamp": time$0.Time;
+
+    /**
+     * 耗时（毫秒）
+     */
+    "duration_ms": number;
+
+    /**
+     * 是否被截断
+     */
+    "truncated": boolean;
+
+    /**
+     * 原始请求体大小
+     */
+    "request_size": number;
+
+    /**
+     * 原始响应体大小
+     */
+    "response_size": number;
+
+    /** Creates a new RequestDetail instance. */
+    constructor($$source: Partial<RequestDetail> = {}) {
+        if (!("sequence_id" in $$source)) {
+            this["sequence_id"] = 0;
+        }
+        if (!("platform" in $$source)) {
+            this["platform"] = "";
+        }
+        if (!("provider" in $$source)) {
+            this["provider"] = "";
+        }
+        if (!("model" in $$source)) {
+            this["model"] = "";
+        }
+        if (!("request_url" in $$source)) {
+            this["request_url"] = "";
+        }
+        if (!("request_body" in $$source)) {
+            this["request_body"] = "";
+        }
+        if (!("response_body" in $$source)) {
+            this["response_body"] = "";
+        }
+        if (!("headers" in $$source)) {
+            this["headers"] = {};
+        }
+        if (!("response_headers" in $$source)) {
+            this["response_headers"] = {};
+        }
+        if (!("http_code" in $$source)) {
+            this["http_code"] = 0;
+        }
+        if (!("timestamp" in $$source)) {
+            this["timestamp"] = null;
+        }
+        if (!("duration_ms" in $$source)) {
+            this["duration_ms"] = 0;
+        }
+        if (!("truncated" in $$source)) {
+            this["truncated"] = false;
+        }
+        if (!("request_size" in $$source)) {
+            this["request_size"] = 0;
+        }
+        if (!("response_size" in $$source)) {
+            this["response_size"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new RequestDetail instance from a string or object.
+     */
+    static createFrom($$source: any = {}): RequestDetail {
+        const $$createField7_0 = $$createType4;
+        const $$createField8_0 = $$createType4;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("headers" in $$parsedSource) {
+            $$parsedSource["headers"] = $$createField7_0($$parsedSource["headers"]);
+        }
+        if ("response_headers" in $$parsedSource) {
+            $$parsedSource["response_headers"] = $$createField8_0($$parsedSource["response_headers"]);
+        }
+        return new RequestDetail($$parsedSource as Partial<RequestDetail>);
+    }
+}
+
+/**
+ * RequestDetailMode 记录详情的模式
+ */
+export enum RequestDetailMode {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = "",
+
+    /**
+     * 关闭
+     */
+    RequestDetailModeOff = "off",
+
+    /**
+     * 仅失败请求
+     */
+    RequestDetailModeFailOnly = "fail_only",
+
+    /**
+     * 全部请求
+     */
+    RequestDetailModeAll = "all",
+};
+
 export class RequestLog {
     "id": number;
 
@@ -2287,6 +2491,11 @@ export class RequestLog {
     "ephemeral_1h_cost": number;
     "total_cost": number;
     "has_pricing": boolean;
+
+    /**
+     * 关联的请求详情 ID（内存缓存）
+     */
+    "request_detail_id"?: number;
 
     /** Creates a new RequestLog instance. */
     constructor($$source: Partial<RequestLog> = {}) {

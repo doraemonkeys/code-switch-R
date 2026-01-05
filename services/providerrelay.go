@@ -2,6 +2,7 @@ package services
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"database/sql"
 	"errors"
@@ -984,7 +985,6 @@ func (prs *ProviderRelayService) forwardRequest(
 	case "x-api-key":
 		// 仅当用户显式选择 x-api-key 时使用（Anthropic 官方 API）
 		headers["x-api-key"] = provider.APIKey
-		headers["anthropic-version"] = "2023-06-01"
 	case "", "bearer":
 		// 默认使用 Bearer token（兼容所有第三方中转）
 		headers["Authorization"] = fmt.Sprintf("Bearer %s", provider.APIKey)
@@ -1007,6 +1007,13 @@ func (prs *ProviderRelayService) forwardRequest(
 		Model:    model,
 		IsStream: isStream,
 	}
+
+	// 【请求详情缓存】准备响应收集器
+	var responseCollector *strings.Builder
+	var respHeaders map[string]string // 响应头（用于请求详情缓存）
+	shouldRecordDetail := GlobalRequestDetailCache != nil &&
+		GlobalRequestDetailCache.GetMode() != RequestDetailModeOff
+
 	start := time.Now()
 	defer func() {
 		requestLog.DurationSec = time.Since(start).Seconds()
@@ -1043,8 +1050,65 @@ func (prs *ProviderRelayService) forwardRequest(
 
 		if err != nil {
 			fmt.Printf("写入 request_log 失败: %v\n", err)
+			return
+		}
+
+		// 【请求详情缓存】获取刚插入的 ID 并存储详情
+		if shouldRecordDetail && GlobalRequestDetailCache.ShouldRecord(requestLog.HttpCode) {
+			// 使用毫秒时间戳作为 ID（13位数字在 JavaScript 安全整数范围内）
+			// 注意：UnixNano 是 19 位，超出 JS Number.MAX_SAFE_INTEGER (16位)，会丢失精度
+			seqID := time.Now().UnixMilli()
+
+			// 准备请求体（截断）
+			reqBody, reqTruncated := TruncateBody(string(bodyBytes), MaxRequestBodySize)
+
+			// 准备响应体（截断）
+			respBody := ""
+			respTruncated := false
+			if responseCollector != nil {
+				collectedData := responseCollector.String()
+
+				// 检查响应是否是 gzip 压缩的，如果是则解压
+				if respHeaders != nil {
+					if encoding, ok := respHeaders["Content-Encoding"]; ok && strings.EqualFold(encoding, "gzip") {
+						if decompressed, err := decompressGzip([]byte(collectedData)); err == nil {
+							collectedData = string(decompressed)
+						}
+						// 解压失败时保留原始数据（可能显示乱码，但至少有数据）
+					}
+				}
+
+				respBody, respTruncated = TruncateBody(collectedData, MaxResponseBodySize)
+			}
+
+			// 使用请求完成时的时间（与数据库 created_at 时间对齐，便于匹配）
+			completedAt := time.Now()
+			detail := &RequestDetail{
+				SequenceID:      seqID,
+				Platform:        kind,
+				Provider:        provider.Name,
+				Model:           model,
+				RequestURL:      targetURL,
+				RequestBody:     reqBody,
+				ResponseBody:    respBody,
+				Headers:         SanitizeHeaders(headers),
+				ResponseHeaders: respHeaders,
+				HttpCode:        requestLog.HttpCode,
+				Timestamp:       completedAt,
+				DurationMs:      int64(requestLog.DurationSec * 1000),
+				Truncated:       reqTruncated || respTruncated,
+				RequestSize:     len(bodyBytes),
+				ResponseSize:    len(respBody),
+			}
+
+			GlobalRequestDetailCache.Store(detail)
 		}
 	}()
+
+	// 初始化响应收集器
+	if shouldRecordDetail {
+		responseCollector = &strings.Builder{}
+	}
 
 	requestTimeout := 32 * time.Hour // 给模型足够思考时间
 
@@ -1101,24 +1165,40 @@ func (prs *ProviderRelayService) forwardRequest(
 	}
 	defer httpResp.Body.Close()
 
+	// 【请求详情缓存】保存响应头
+	if shouldRecordDetail {
+		respHeaders = make(map[string]string)
+		for k, vv := range httpResp.Header {
+			if len(vv) > 0 {
+				respHeaders[k] = vv[0] // 只保存第一个值
+			}
+		}
+	}
+
 	status := httpResp.StatusCode
 	requestLog.HttpCode = status
 
 	// 状态码为 0 且无错误：当作成功处理
 	if status == 0 {
 		fmt.Printf("[WARN] Provider %s 返回状态码 0，但无错误，当作成功处理\n", provider.Name)
-		if copyErr := writeProxiedResponse(c, httpResp, kind, requestLog); copyErr != nil {
+		if copyErr := writeProxiedResponseWithCollector(c, httpResp, kind, requestLog, responseCollector); copyErr != nil {
 			fmt.Printf("[WARN] 复制响应到客户端失败（不影响provider成功判定）: %v\n", copyErr)
 		}
 		return true, nil
 	}
 
 	if status >= http.StatusOK && status < http.StatusMultipleChoices {
-		if copyErr := writeProxiedResponse(c, httpResp, kind, requestLog); copyErr != nil {
+		if copyErr := writeProxiedResponseWithCollector(c, httpResp, kind, requestLog, responseCollector); copyErr != nil {
 			fmt.Printf("[WARN] 复制响应到客户端失败（不影响provider成功判定）: %v\n", copyErr)
 		}
 		// 只要provider返回了2xx状态码，就算成功（复制失败是客户端问题，不是provider问题）
 		return true, nil
+	}
+
+	// 对于非 2xx 响应，也尝试收集响应体（用于错误调试）
+	if responseCollector != nil && httpResp.Body != nil {
+		respBody, _ := io.ReadAll(io.LimitReader(httpResp.Body, int64(MaxResponseBodySize)))
+		responseCollector.Write(respBody)
 	}
 
 	return false, fmt.Errorf("upstream status %d", status)
@@ -1127,6 +1207,11 @@ func (prs *ProviderRelayService) forwardRequest(
 // writeProxiedResponse 写入代理响应（复制响应头、状态码、响应体）
 // 用于避免 forwardRequest 中 status 0 和 status 2xx 的重复代码
 func writeProxiedResponse(c *gin.Context, httpResp *http.Response, kind string, requestLog *RequestLog) error {
+	return writeProxiedResponseWithCollector(c, httpResp, kind, requestLog, nil)
+}
+
+// writeProxiedResponseWithCollector 写入代理响应，同时可选地收集响应内容
+func writeProxiedResponseWithCollector(c *gin.Context, httpResp *http.Response, kind string, requestLog *RequestLog, collector *strings.Builder) error {
 	// 复制响应头（过滤掉逐跳头）
 	for k, vv := range httpResp.Header {
 		if isHopByHopHeader(k) {
@@ -1140,13 +1225,20 @@ func writeProxiedResponse(c *gin.Context, httpResp *http.Response, kind string, 
 
 	// 流式复制 body 并通过 hook 提取 token 用量
 	hook := RequestLogHook(c, kind, requestLog)
-	return copyResponseBodyWithHook(httpResp.Body, c.Writer, hook)
+	return copyResponseBodyWithHookAndCollector(httpResp.Body, c.Writer, hook, collector)
 }
 
 // copyResponseBodyWithHook 流式复制响应 body 到 writer，同时调用 hook 处理数据
 // 用于在流式传输过程中解析 SSE 数据提取 token 用量
 func copyResponseBodyWithHook(body io.Reader, writer io.Writer, hook func([]byte) []byte) error {
+	return copyResponseBodyWithHookAndCollector(body, writer, hook, nil)
+}
+
+// copyResponseBodyWithHookAndCollector 流式复制响应 body，同时可选地收集响应内容
+func copyResponseBodyWithHookAndCollector(body io.Reader, writer io.Writer, hook func([]byte) []byte, collector *strings.Builder) error {
 	buf := make([]byte, responseBufferSize)
+	collectedSize := 0
+	maxCollectSize := MaxStreamResponseSize
 
 	for {
 		n, readErr := body.Read(buf)
@@ -1157,6 +1249,17 @@ func copyResponseBodyWithHook(body io.Reader, writer io.Writer, hook func([]byte
 			// 使用 panic recovery 保护，避免 hook 异常导致服务器崩溃
 			if hook != nil {
 				data = safeCallHook(hook, data)
+			}
+
+			// 收集响应内容（用于请求详情缓存）
+			if collector != nil && collectedSize < maxCollectSize {
+				remaining := maxCollectSize - collectedSize
+				toWrite := len(data)
+				if toWrite > remaining {
+					toWrite = remaining
+				}
+				collector.Write(data[:toWrite])
+				collectedSize += toWrite
 			}
 
 			// 写入客户端
@@ -1536,6 +1639,7 @@ type RequestLog struct {
 	Ephemeral1hCost   float64 `json:"ephemeral_1h_cost"`
 	TotalCost         float64 `json:"total_cost"`
 	HasPricing        bool    `json:"has_pricing"`
+	RequestDetailID   int64   `json:"request_detail_id,omitempty"` // 关联的请求详情 ID（内存缓存）
 }
 
 // claude code usage parser
@@ -2652,7 +2756,10 @@ func (prs *ProviderRelayService) forwardModelsRequest(
 	switch authType {
 	case "x-api-key":
 		req.Header.Set("x-api-key", selectedProvider.APIKey)
-		req.Header.Set("anthropic-version", "2023-06-01")
+		// 仅在原始请求未携带 anthropic-version 时设置默认值
+		if req.Header.Get("anthropic-version") == "" && req.Header.Get("Anthropic-Version") == "" {
+			req.Header.Set("Anthropic-Version", "2023-06-01")
+		}
 	case "", "bearer":
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", selectedProvider.APIKey))
 	default:
@@ -2724,4 +2831,15 @@ func (prs *ProviderRelayService) customModelsHandler() gin.HandlerFunc {
 
 		_ = prs.forwardModelsRequest(c, kind, "CustomModels")
 	}
+}
+
+// decompressGzip 解压 gzip 压缩的数据
+// 用于请求详情缓存中解压 gzip 响应体，以便正确显示内容
+func decompressGzip(data []byte) ([]byte, error) {
+	reader, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	return io.ReadAll(reader)
 }

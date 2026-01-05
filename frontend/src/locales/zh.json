@@ -512,6 +512,31 @@
       "costDetail": {
         "title": "今日消费明细",
         "empty": "今日暂无消费记录"
+      },
+      "detail": {
+        "title": "请求详情",
+        "notFound": "详情不存在",
+        "notFoundHint": "该请求的详情可能已过期或未被记录",
+        "basicInfo": "基本信息",
+        "headers": "请求头",
+        "responseHeaders": "响应头",
+        "noHeaders": "无请求头信息",
+        "requestBody": "请求体",
+        "responseBody": "响应体",
+        "requestUrl": "请求 URL",
+        "copy": "复制",
+        "format": "格式化",
+        "copied": "已复制到剪贴板",
+        "copyFailed": "复制失败",
+        "truncated": "内容已截断（原始大小: {size}）",
+        "viewDetail": "详情",
+        "noDetail": "—"
+      },
+      "recording": {
+        "label": "详情记录",
+        "off": "关闭",
+        "failedOnly": "仅失败",
+        "all": "全部"
       }
     },
     "general": {

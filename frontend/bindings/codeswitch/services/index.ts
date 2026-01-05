@@ -20,6 +20,7 @@ import * as NetworkService from "./networkservice.js";
 import * as PromptService from "./promptservice.js";
 import * as ProviderRelayService from "./providerrelayservice.js";
 import * as ProviderService from "./providerservice.js";
+import * as RequestDetailService from "./requestdetailservice.js";
 import * as SettingsService from "./settingsservice.js";
 import * as SkillService from "./skillservice.js";
 import * as SpeedTestService from "./speedtestservice.js";
@@ -45,6 +46,7 @@ export {
     PromptService,
     ProviderRelayService,
     ProviderService,
+    RequestDetailService,
     SettingsService,
     SkillService,
     SpeedTestService,
@@ -64,6 +66,7 @@ export {
     CLIConfigSnapshots,
     CLIPlatform,
     CLITemplate,
+    CacheStats,
     ClaudeProxyStatus,
     ConfigFile,
     ConfigImportResult,
@@ -98,6 +101,8 @@ export {
     ProviderDailyStat,
     ProviderTimeline,
     ProxyInjection,
+    RequestDetail,
+    RequestDetailMode,
     RequestLog,
     RetryConfig,
     Skill,

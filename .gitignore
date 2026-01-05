@@ -6,4 +6,6 @@ bin
 CLAUDE.md
 *.exe
 .cursor
+.claude
 *gitignore_*
+build/*

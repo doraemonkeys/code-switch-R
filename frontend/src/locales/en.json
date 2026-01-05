@@ -511,6 +511,31 @@
       "costDetail": {
         "title": "Today's Cost Breakdown",
         "empty": "No cost records today"
+      },
+      "detail": {
+        "title": "Request Details",
+        "notFound": "Details not found",
+        "notFoundHint": "Details for this request may have expired or were not recorded",
+        "basicInfo": "Basic Info",
+        "headers": "Request Headers",
+        "responseHeaders": "Response Headers",
+        "noHeaders": "No header information",
+        "requestBody": "Request Body",
+        "responseBody": "Response Body",
+        "requestUrl": "Request URL",
+        "copy": "Copy",
+        "format": "Format",
+        "copied": "Copied to clipboard",
+        "copyFailed": "Copy failed",
+        "truncated": "Content truncated (original size: {size})",
+        "viewDetail": "Details",
+        "noDetail": "—"
+      },
+      "recording": {
+        "label": "Detail Recording",
+        "off": "Off",
+        "failedOnly": "Failed Only",
+        "all": "All"
       }
     },
     "general": {
