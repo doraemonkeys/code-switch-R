@@ -98,14 +98,8 @@ onUnmounted(() => {
         </label>
         <button class="ghost-icon" aria-label="返回" @click="goBack">
           <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M15 18l-6-6 6-6"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
+            <path d="M15 18l-6-6 6-6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+              stroke-linejoin="round" />
           </svg>
         </button>
       </div>
@@ -122,12 +116,7 @@ onUnmounted(() => {
           <p>暂无日志</p>
         </div>
 
-        <div
-          v-for="(log, index) in logs"
-          :key="index"
-          class="log-entry"
-          :class="getLevelClass(log.level)"
-        >
+        <div v-for="(log, index) in logs" :key="index" class="log-entry" :class="getLevelClass(log.level)">
           <span class="log-timestamp">{{ formatTimestamp(log.timestamp) }}</span>
           <span class="log-level">{{ log.level }}</span>
           <span class="log-message">{{ log.message }}</span>
@@ -184,6 +173,8 @@ onUnmounted(() => {
   line-height: 1.6;
   background: #1e1e1e;
   color: #d4d4d4;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 html.dark .console-content {
@@ -253,6 +244,8 @@ html.dark .console-content {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

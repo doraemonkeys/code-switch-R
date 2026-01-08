@@ -413,6 +413,8 @@ html.dark .drawer-close:hover {
   flex: 1;
   overflow-y: auto;
   padding: 16px;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* 空状态 */
