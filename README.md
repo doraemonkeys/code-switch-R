@@ -2,6 +2,21 @@
 
 > 一站式管理你的 AI 编程助手（Claude Code / Codex / Gemini CLI）
 
+
+## fork 改了些啥
+
+- **高级 Header 配置**：Provider 新增 `extraHeaders`（补充）/ `overrideHeaders`（覆盖）/ `stripHeaders`（移除），按 原始→strip→override→extra 优先级应用
+- **鉴权自动识别**：`ConnectivityAuthType` 支持 `bearer` / `x-api-key` / `auto`，auto 会根据原请求头自动判断认证方式
+- **同源缓存亲和性**：对 user+platform+model 维度缓存上次成功的 provider（5分钟粘性）以利用上游缓存，失败自动失效并降级
+- **请求详情记录**：新增详情缓存，支持 `off` / `fail_only` / `all` 模式，保存请求头/响应头/请求体/响应体/耗时等，看看 CLI 发送了些啥
+- **Header 透传优化**：默认透传原请求 headers（仅过滤认证头和 hop-by-hop），不再硬写 `Content-Type`
+- **anthropic-version 集中管理**：硬编码收敛到 `constants.go`，仅用于连通性测试和健康检查，主代理侧走透传
+- **HTTP 客户端强化**：改用标准库 `http.Client` + `context`，支持网络瞬时错误重试，客户端中断不计入失败
+- **控制台日志去噪**：过滤前端轮询/Binding/静态资源等高频噪声
+- **前端配套**：新增 `HeaderConfigEditor.vue` 和 `RequestDetailDrawer.vue`，日志页可查看请求详情
+- **Provider 过滤详情反馈**：无可用 Provider 时返回详细原因（禁用/配置无效/模型不支持/黑名单），便于排查
+- **CSS 规范化**：统一样式格式，优化 user-select 属性支持文本选中复制
+
 ## 这是什么？
 
 **Code Switch** 是一个桌面应用，帮你解决以下问题：
