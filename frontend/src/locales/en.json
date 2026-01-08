@@ -209,6 +209,33 @@
           "wildcard": "Wildcard mapping, auto expands claude-sonnet-4 → anthropic/claude-sonnet-4",
           "prefix": "Prefix mapping"
         }
+      },
+      "headerConfig": {
+        "title": "Advanced Header Settings",
+        "add": "Add",
+        "remove": "Remove",
+        "keyPlaceholder": "Header name",
+        "valuePlaceholder": "Header value",
+        "extraHeaders": {
+          "label": "Extra Headers",
+          "tooltip": "Add headers only if they don't already exist in the original request"
+        },
+        "overrideHeaders": {
+          "label": "Override Headers",
+          "tooltip": "Force overwrite headers regardless of original request values",
+          "authWarning": "Authentication headers (Authorization, X-Api-Key, X-Goog-Api-Key) will be overwritten by the provider's API key settings"
+        },
+        "stripHeaders": {
+          "label": "Strip Headers",
+          "tooltip": "Remove these headers before forwarding the request",
+          "placeholder": "Header name to remove"
+        },
+        "help": {
+          "title": "Header Priority:",
+          "extra": "Added only when not present in original request",
+          "override": "Always applied, overwrites any existing value",
+          "strip": "Removed before forwarding to provider"
+        }
       }
     },
     "main": {

@@ -2041,6 +2041,25 @@ export class Provider {
     "connectivityAuthType"?: string;
 
     /**
+     * ExtraHeaders - 额外添加的 Headers（仅当原请求中不存在该 key 时才添加）
+     * 用例：添加 Provider 要求的自定义 Header（如 X-Custom-Client）
+     */
+    "extraHeaders"?: { [_: string]: string };
+
+    /**
+     * OverrideHeaders - 强制覆盖的 Headers（无论原请求中是否存在都会设置）
+     * 用例：强制设置 Content-Type 或覆盖特定 Header
+     * 注意：认证头（Authorization, X-Api-Key）不应在此配置，会被 APIKey 设置覆盖
+     */
+    "overrideHeaders"?: { [_: string]: string };
+
+    /**
+     * StripHeaders - 需要移除的 Headers（在转发前删除这些 Header）
+     * 用例：移除某些 Provider 不支持或会导致问题的 Header（如 X-Forwarded-For）
+     */
+    "stripHeaders"?: string[];
+
+    /**
      * [已废弃] 连通性检测开关 - 迁移到 AvailabilityMonitorEnabled
      */
     "connectivityCheck"?: boolean;
@@ -2095,6 +2114,9 @@ export class Provider {
         const $$createField10_0 = $$createType20;
         const $$createField11_0 = $$createType4;
         const $$createField15_0 = $$createType22;
+        const $$createField17_0 = $$createType4;
+        const $$createField18_0 = $$createType4;
+        const $$createField19_0 = $$createType18;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("supportedModels" in $$parsedSource) {
             $$parsedSource["supportedModels"] = $$createField10_0($$parsedSource["supportedModels"]);
@@ -2104,6 +2126,15 @@ export class Provider {
         }
         if ("availabilityConfig" in $$parsedSource) {
             $$parsedSource["availabilityConfig"] = $$createField15_0($$parsedSource["availabilityConfig"]);
+        }
+        if ("extraHeaders" in $$parsedSource) {
+            $$parsedSource["extraHeaders"] = $$createField17_0($$parsedSource["extraHeaders"]);
+        }
+        if ("overrideHeaders" in $$parsedSource) {
+            $$parsedSource["overrideHeaders"] = $$createField18_0($$parsedSource["overrideHeaders"]);
+        }
+        if ("stripHeaders" in $$parsedSource) {
+            $$parsedSource["stripHeaders"] = $$createField19_0($$parsedSource["stripHeaders"]);
         }
         return new Provider($$parsedSource as Partial<Provider>);
     }

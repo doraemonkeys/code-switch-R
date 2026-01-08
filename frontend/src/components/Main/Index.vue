@@ -725,6 +725,14 @@
                 </div>
 
                 <div class="form-field">
+                  <HeaderConfigEditor
+                    v-model:extra-headers="modalState.form.extraHeaders"
+                    v-model:override-headers="modalState.form.overrideHeaders"
+                    v-model:strip-headers="modalState.form.stripHeaders"
+                  />
+                </div>
+
+                <div class="form-field">
                   <CLIConfigEditor
                     :platform="activeTab as CLIPlatform"
                     v-model="modalState.form.cliConfig"
@@ -1002,6 +1010,7 @@ import BaseModal from '../common/BaseModal.vue'
 import BaseInput from '../common/BaseInput.vue'
 import ModelWhitelistEditor from '../common/ModelWhitelistEditor.vue'
 import ModelMappingEditor from '../common/ModelMappingEditor.vue'
+import HeaderConfigEditor from '../common/HeaderConfigEditor.vue'
 import CLIConfigEditor from '../common/CLIConfigEditor.vue'
 import CustomCliConfigEditor from '../common/CustomCliConfigEditor.vue'
 import { LoadProviders, SaveProviders, DuplicateProvider } from '../../../bindings/codeswitch/services/providerservice'
@@ -2498,6 +2507,10 @@ type VendorForm = {
     testEndpoint?: string
     timeout?: number
   }
+  // === Header 配置（v0.6.0+） ===
+  extraHeaders?: Record<string, string>
+  overrideHeaders?: Record<string, string>
+  stripHeaders?: string[]
   // === 旧连通性字段（已废弃） ===
   /** @deprecated */
   connectivityCheck?: boolean
@@ -2532,6 +2545,10 @@ const defaultFormValues = (platform?: string): VendorForm => ({
     testEndpoint: getDefaultEndpoint(platform || 'claude'),
     timeout: 15000,
   },
+  // Header 配置（v0.6.0+）
+  extraHeaders: {},
+  overrideHeaders: {},
+  stripHeaders: [],
   // 旧连通性字段（已废弃，置空）
   connectivityCheck: false,
   connectivityTestModel: '',
@@ -2642,6 +2659,10 @@ const openEditModal = (card: AutomationCard) => {
         getDefaultEndpoint(activeTab.value),
       timeout: card.availabilityConfig?.timeout || 15000,
     },
+    // Header 配置（v0.6.0+）
+    extraHeaders: card.extraHeaders || {},
+    overrideHeaders: card.overrideHeaders || {},
+    stripHeaders: card.stripHeaders || [],
     // 旧连通性字段不再写入表单
     connectivityCheck: false,
     connectivityTestModel: '',
@@ -2718,6 +2739,10 @@ const submitModal = async () => {
           getDefaultEndpoint(modalState.tabId),
         timeout: modalState.form.availabilityConfig?.timeout || 15000,
       },
+      // Header 配置（v0.6.0+）
+      extraHeaders: modalState.form.extraHeaders || {},
+      overrideHeaders: modalState.form.overrideHeaders || {},
+      stripHeaders: modalState.form.stripHeaders || [],
       // 旧连通性字段清空（避免再次写入）
       connectivityCheck: false,
       connectivityTestModel: '',
@@ -2754,6 +2779,10 @@ const submitModal = async () => {
           getDefaultEndpoint(modalState.tabId),
         timeout: modalState.form.availabilityConfig?.timeout || 15000,
       },
+      // Header 配置（v0.6.0+）
+      extraHeaders: modalState.form.extraHeaders || {},
+      overrideHeaders: modalState.form.overrideHeaders || {},
+      stripHeaders: modalState.form.stripHeaders || [],
       // 旧连通性字段清空
       connectivityCheck: false,
       connectivityTestModel: '',

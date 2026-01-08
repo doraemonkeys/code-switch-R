@@ -223,6 +223,7 @@ sudo rpm -i codeswitch-*.rpm
 
 # 安装 Wails CLI
 go install github.com/wailsapp/wails/v3/cmd/wails3@latest
+go install github.com/go-task/task/v3/cmd/task@latest
 ```
 
 ### 开发运行
@@ -239,6 +240,8 @@ wails3 task common:update:build-assets
 
 # 打包当前平台
 wails3 task package
+
+task windows:build PRODUCTION=true
 ```
 
 ## 技术栈
@@ -257,3 +260,8 @@ MIT License
 ---
 
 **有问题？** 欢迎在 [Issues](https://github.com/Rogers-F/code-switch-R/issues) 反馈
+# 确保 User 和 Machine 级别都清除干净
+
+
+
+[Environment]::SetEnvironmentVariable("ANTHROPIC_BASE_URL", $null, "Machine")

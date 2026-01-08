@@ -1,8 +1,8 @@
 # Header 透传优化与硬编码修复 - 最终计划
 
-> **版本**: v1.3  
-> **状态**: P0-P3 已完成 ✅，Phase 2 后端已实现，待前端 UI  
-> **涉及文件**: `providerrelay.go`, `providerservice.go`, `healthcheckservice.go`, `connectivitytestservice.go`, `constants.go`, `frontend/`
+> **版本**: v1.4  
+> **状态**: P0-P5 全部完成 ✅  
+> **涉及文件**: `providerrelay.go`, `providerservice.go`, `healthcheckservice.go`, `connectivitytestservice.go`, `constants.go`, `header_config_test.go`, `frontend/`
 
 ---
 
@@ -38,7 +38,8 @@
 | **P1** | Phase 1.5: 集中管理 API 版本常量 | 30 分钟 | ✅ 完成 |
 | **P2** | Phase 1.6: 默认模型改用 `-latest` 别名 | 10 分钟 | ✅ 完成 |
 | **P3** | Phase 2: Provider Header 配置扩展（后端） | 30 分钟 | ✅ 完成 |
-| **P4** | Phase 3-4: 前端 UI 支持、文档与测试 | 4-6 小时 | ⏳ 待定 |
+| **P4** | Phase 3: 前端 UI 支持 | 1-2 小时 | ✅ 完成 |
+| **P5** | Phase 4: 文档与测试 | 2-3 小时 | ✅ 完成 |
 
 ---
 
@@ -211,7 +212,9 @@ func buildForwardHeaders(original http.Header, provider *Provider) http.Header {
 
 ---
 
-## 🔧 Phase 3: 前端 UI 支持 (P3)
+## 🔧 Phase 3: 前端 UI 支持 (P4) ✅
+
+**状态**: 已完成 (2026-01-08)
 
 **目标**: Provider 编辑界面添加 Header 配置
 
@@ -245,10 +248,60 @@ func buildForwardHeaders(original http.Header, provider *Provider) http.Header {
 └─────────────────────────────────────────────────┘
 ```
 
+### 实现内容
+
+已新增 `HeaderConfigEditor.vue` 组件，支持：
+- **ExtraHeaders**: 键值对编辑，仅当原请求中不存在该 key 时添加
+- **OverrideHeaders**: 键值对编辑，强制覆盖
+- **StripHeaders**: 字符串列表编辑，转发前移除
+- 折叠面板设计，配置数量徽标
+- 认证头警告提示
+
 ### 涉及文件
 
-- `frontend/src/components/` - Provider 编辑组件
+- `frontend/src/components/common/HeaderConfigEditor.vue` - 新增组件
+- `frontend/src/components/Main/Index.vue` - 集成到 Provider 编辑表单
+- `frontend/src/data/cards.ts` - AutomationCard 类型扩展
+- `frontend/src/locales/en.json` / `zh.json` - 国际化文案
 - `frontend/bindings/` - 类型定义（Wails 自动生成）
+
+---
+
+## 🔧 Phase 4: 文档与测试 (P5) ✅
+
+**状态**: 已完成 (2026-01-08)
+
+**目标**: 完善单元测试覆盖，确保 Header 配置功能稳定可靠
+
+### 新增测试文件
+
+`services/header_config_test.go`:
+
+| 测试类别 | 测试内容 |
+|---------|---------|
+| `buildForwardHeaders` | nil Provider、空 Provider、StripHeaders、OverrideHeaders、ExtraHeaders、优先级处理、深拷贝 |
+| `cloneHeaders` | 认证头过滤（Authorization/X-Api-Key/X-Goog-Api-Key）、hop-by-hop 头过滤、多值 Header 复制 |
+| Provider JSON 序列化 | omitempty 行为、反序列化、完整 round-trip |
+| 真实场景集成测试 | OpenRouter HTTP-Referer、非标准 API Content-Type、移除代理头、复合配置 |
+| 性能基准测试 | `BenchmarkBuildForwardHeaders_Simple`、`BenchmarkBuildForwardHeaders_WithConfig`、`BenchmarkCloneHeaders` |
+
+### 测试运行
+
+```bash
+# 运行单元测试
+go test -v ./services/ -run "TestBuildForwardHeaders|TestCloneHeaders|TestProviderHeaderConfig" -count=1
+
+# 运行性能测试
+go test -bench="BenchmarkBuildForwardHeaders|BenchmarkCloneHeaders" -run="^$" ./services/ -benchtime=1s
+```
+
+### 测试覆盖要点
+
+1. **功能正确性**: 验证 Strip → Override → Extra 的处理优先级
+2. **安全性**: 验证认证头（Authorization, X-Api-Key, X-Goog-Api-Key）和 hop-by-hop 头被正确过滤
+3. **数据完整性**: 验证深拷贝不会影响原始 Header
+4. **JSON 兼容性**: 验证 omitempty 行为和序列化/反序列化完整性
+5. **性能**: 基准测试确保无性能回归
 
 ---
 
@@ -296,13 +349,11 @@ Week 1: ✅ 已完成 (2026-01-08)
   ├── Phase 1: 移除强制 Content-Type ✅
   ├── Phase 1.5: 集中 API 版本常量 ✅
   ├── Phase 1.6: 默认模型 -latest ✅
-  └── Phase 2: Provider Header 配置扩展（后端）✅
+  ├── Phase 2: Provider Header 配置扩展（后端）✅
+  ├── Phase 3: 前端 UI 支持 ✅
+  └── Phase 4: 文档与测试 ✅
   
-Week 2: 观察效果，收集反馈
-
-Week 3+ (按需):
-  ├── Phase 3: 前端 UI 支持
-  └── Phase 4: 文档与测试
+Week 2+: 观察效果，收集反馈
 ```
 
 ---
@@ -316,5 +367,9 @@ Week 3+ (按需):
 - [x] (Phase 2 前置) `cloneHeaders()` 过滤 `X-Goog-Api-Key`
 - [x] (Phase 2) Provider Header 配置生效
 - [x] (Phase 2) OverrideHeaders 不影响认证头
-- [ ] (Phase 3) 前端可编辑 Header 配置
-- [ ] (Phase 3) 前端 UI 校验：OverrideHeaders 不允许配置认证头
+- [x] (Phase 3) 前端可编辑 Header 配置
+- [x] (Phase 3) 前端 UI 提示：OverrideHeaders 中的认证头会被覆盖
+- [x] (Phase 4) `buildForwardHeaders()` 单元测试覆盖
+- [x] (Phase 4) `cloneHeaders()` 单元测试覆盖
+- [x] (Phase 4) Provider Header 配置 JSON 序列化测试
+- [x] (Phase 4) 性能基准测试

@@ -210,6 +210,33 @@
           "wildcard": "通配符映射，自动展开 claude-sonnet-4 → anthropic/claude-sonnet-4",
           "prefix": "前缀映射"
         }
+      },
+      "headerConfig": {
+        "title": "高级 Header 设置",
+        "add": "添加",
+        "remove": "删除",
+        "keyPlaceholder": "Header 名称",
+        "valuePlaceholder": "Header 值",
+        "extraHeaders": {
+          "label": "额外 Headers",
+          "tooltip": "仅当原请求中不存在该 Header 时才添加"
+        },
+        "overrideHeaders": {
+          "label": "覆盖 Headers",
+          "tooltip": "强制覆盖 Header，无论原请求中是否存在",
+          "authWarning": "认证头（Authorization、X-Api-Key、X-Goog-Api-Key）会被供应商 API 密钥设置覆盖"
+        },
+        "stripHeaders": {
+          "label": "移除 Headers",
+          "tooltip": "在转发请求前移除这些 Headers",
+          "placeholder": "要移除的 Header 名称"
+        },
+        "help": {
+          "title": "Header 优先级：",
+          "extra": "仅在原请求中不存在时添加",
+          "override": "始终应用，覆盖任何已存在的值",
+          "strip": "在转发到供应商前移除"
+        }
       }
     },
     "main": {
